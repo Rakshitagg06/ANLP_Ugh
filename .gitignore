@@ -1,0 +1,34 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.deps/
+.env
+.secrets/
+.DS_Store
+
+# Data and experiment artifacts
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+outputs/*
+!outputs/predictions/
+!outputs/metrics/
+!outputs/checkpoints/
+!outputs/plots/
+outputs/predictions/*
+outputs/metrics/*
+outputs/checkpoints/*
+outputs/plots/*
+wandb/
+*.out
+*.err
+
+# Keep empty directory structure
+!outputs/predictions/.gitkeep
+!outputs/metrics/.gitkeep
+!outputs/checkpoints/.gitkeep
+!outputs/plots/.gitkeep

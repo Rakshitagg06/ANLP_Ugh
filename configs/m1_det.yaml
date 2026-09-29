@@ -1,0 +1,63 @@
+experiment:
+  name: polar-m1-det
+  model_type: m1_det
+  fold: 0
+  seed: 42
+  output_dir: outputs/runs
+
+data:
+  path: data/processed/english_train_folds.csv
+  id_column: example_id
+  text_column: text
+  det_label_column: gold_det
+  fold_column: fold
+  type_label_columns:
+    political: type_political
+    racial_ethnic: type_racial_ethnic
+    religious: type_religious
+    gender_sexual_identity: type_gender_sexual_identity
+    other: type_other
+  num_folds: 5
+  internal_validation_fraction: 0.1
+  max_length: 256
+  type_metrics_on_gold_det_positive_only: true
+
+model:
+  pretrained_name: microsoft/deberta-v3-base
+  revision: null
+  dropout: 0.1
+  lambda_type: 1.0
+
+training:
+  device: auto
+  epochs: 8
+  batch_size: 8
+  eval_batch_size: 16
+  gradient_accumulation_steps: 2
+  learning_rate: 0.00002
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  early_stopping_patience: 2
+  selection_metric: det_macro_f1
+  mixed_precision: true
+  deterministic: true
+  keep_checkpoint: false
+  num_workers: 2
+  use_type_positive_weights: false
+
+thresholds:
+  default_det: 0.5
+  default_type: 0.5
+  det_grid: [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+  type_grid: [0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80]
+  type_mode: per_label
+
+logging:
+  level: INFO
+  wandb:
+    enabled: false
+    project: anlp-project
+    entity: manavberiwal006-iiit-hyderabad
+    mode: online
+    tags: [m1, det]
