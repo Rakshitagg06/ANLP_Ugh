@@ -1,0 +1,7 @@
+,det_threshold,det_threshold,det_threshold,det_threshold,det_threshold,thr_gender_sexual_identity,thr_gender_sexual_identity,thr_gender_sexual_identity,thr_gender_sexual_identity,thr_gender_sexual_identity,thr_other,thr_other,thr_other,thr_other,thr_other,thr_political,thr_political,thr_political,thr_political,thr_political,thr_racial_ethnic,thr_racial_ethnic,thr_racial_ethnic,thr_racial_ethnic,thr_racial_ethnic,thr_religious,thr_religious,thr_religious,thr_religious,thr_religious
+,at_grid_edge,max,mean,min,std,at_grid_edge,max,mean,min,std,at_grid_edge,max,mean,min,std,at_grid_edge,max,mean,min,std,at_grid_edge,max,mean,min,std,at_grid_edge,max,mean,min,std
+model,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+m1_det,3,0.8,0.47,0.2,0.1713913650100261,0,,,,,0,,,,,0,,,,,0,,,,,0,,,,
+m1_type,0,,,,,6,0.8,0.434,0.2,0.18692690193406264,6,0.8,0.402,0.2,0.18623461905170408,7,0.5,0.306,0.2,0.08578072821638515,2,0.8,0.562,0.2,0.14880076164679626,6,0.8,0.63,0.35,0.15275252316519472
+m2,6,0.8,0.488,0.2,0.2052843556305903,1,0.8,0.574,0.25,0.15351438586225938,4,0.8,0.44799999999999995,0.2,0.18341664773587668,4,0.35,0.27399999999999997,0.2,0.04591659104651969,0,0.75,0.478,0.25,0.15483862567202022,7,0.8,0.66,0.4,0.13919410907075055
+m4_core,0,,,,,2,0.75,0.502,0.2,0.164873689026883,7,0.8,0.47200000000000003,0.2,0.20159778437935938,19,0.3,0.21600000000000003,0.2,0.03135814620371129,2,0.75,0.496,0.2,0.1842326427826151,1,0.8,0.474,0.25,0.16401219466856723

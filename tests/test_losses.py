@@ -18,3 +18,9 @@ def test_noisy_or_logit_maps_to_probability():
     assert torch.allclose(probability_from_logit, noisy_or_probability(logits), atol=1e-6)
     assert np.isfinite(probability_from_logit.numpy()).all()
 
+
+
+def test_noisy_or_logit_gradient_is_finite_for_very_negative_logits():
+    logits = torch.tensor([[-30.0] * 5, [-20.0] * 5, [-5.0] * 5, [8.0] * 5], requires_grad=True)
+    noisy_or_logit(logits).sum().backward()
+    assert torch.isfinite(logits.grad).all()

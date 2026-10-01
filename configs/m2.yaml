@@ -24,7 +24,7 @@ data:
 
 model:
   pretrained_name: microsoft/deberta-v3-base
-  revision: null
+  revision: de19fe7db5162df5f3d8f0b41321c0267288fd74  # refs/pr/14: safetensors of main 8ccc9b6, verified tensor-identical
   dropout: 0.1
   lambda_type: 1.0
 

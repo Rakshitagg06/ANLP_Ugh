@@ -9,10 +9,14 @@ The repository implements the controlled mid-submission comparison:
 - M3: deterministic post-processing of M2 predictions;
 - M4-core: TYPE heads with differentiable noisy-OR detection.
 
-The exact scientific and execution plan is in [mid_submission_execution_plan.md](mid_submission_execution_plan.md).
-The current Ada-outage handoff, remaining task accounting, local execution
-procedure, artifact merge, and final analysis steps are in
-[docs/remaining_runs_local_recovery_plan.md](docs/remaining_runs_local_recovery_plan.md).
+The experimental protocol is described in [docs/experiments.md](docs/experiments.md) and in the report.
+The mid-submission results are summarised in
+[docs/mid_submission_results.md](docs/mid_submission_results.md). The submitted
+ACL-format report is [report/report.pdf](report/report.pdf); its source is
+`report/acl_latex.tex` with `report/custom.bib` and `report/figures/`. To rebuild
+it, add `acl.sty` and `acl_natbib.bst` from the official
+[ACL style files](https://github.com/acl-org/acl-style-files) (or start from the
+ACL Overleaf template) and compile `acl_latex.tex` with pdfLaTeX.
 
 ## Repository structure
 
@@ -198,4 +202,4 @@ The tests cover noisy-OR equivalence, both LVR directions, symmetric M3 consiste
 
 ## Current status
 
-The framework is implemented, but no model has been trained because the official data and runtime dependencies are not yet present in this workspace. Hyperparameters in `configs/` are starting values and must be validated with the first Ada sanity run.
+All 100 mid-submission training runs (M1-DET, M1-TYPE, M2, M4-core × 5 folds × 5 seeds) are complete, with M1 combination and both M3 variants derived for every fold/seed pair. The RQ1/RQ2 analysis, tables, and figures are in [docs/mid_submission_results.md](docs/mid_submission_results.md) and are regenerated with `python scripts/analyze_mid_submission.py`. The sweep ran locally via `bash scripts/run_local_sweep.sh` (resumable; logs every run and its predictions to W&B).

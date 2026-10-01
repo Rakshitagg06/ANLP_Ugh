@@ -51,6 +51,7 @@ class M1DetModel(EncoderWithPooling):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         det_labels: torch.Tensor | None = None,
+        type_labels: torch.Tensor | None = None,  # unused; accepted so batches match other models
         **kwargs: Any,
     ) -> ModelOutput:
         det_logits = self.det_head(self.encode(input_ids, attention_mask, **kwargs)).squeeze(-1)

@@ -1,0 +1,6 @@
+model,false_positives,false_negatives,predicted_positive,type_labels_on_gold_negative,gold_negative_with_any_type
+m1,325.4,280.4,1220.0,3296.6,2039.2
+m2,344.8,280.8,1239.0,4455.6,2047.0
+m3_one_way,344.8,280.8,1239.0,617.0,344.8
+m3_symmetric,344.8,281.2,1238.6,617.0,344.8
+m4_core,471.6,199.0,1447.6,642.8,471.6

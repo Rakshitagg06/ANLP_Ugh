@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 LOGGER = logging.getLogger(__name__)
@@ -54,6 +54,26 @@ class ExperimentTracker:
                 self.run.log(images)
             except Exception as exc:  # W&B/network failures must not invalidate training outputs.
                 LOGGER.warning("W&B image logging failed; plots remain available locally: %s", exc)
+
+    def set_summary(self, values: Dict[str, Any]) -> None:
+        if self.run is not None:
+            try:
+                self.run.summary.update(values)
+            except Exception as exc:  # W&B/network failures must not invalidate training outputs.
+                LOGGER.warning("W&B summary update failed: %s", exc)
+
+    def log_files_artifact(self, name: str, artifact_type: str, paths: List[str | Path]) -> None:
+        """Upload small run outputs (predictions, metrics) so W&B holds a full copy."""
+        if self.run is None or self._wandb is None:
+            return
+        try:
+            artifact = self._wandb.Artifact(name, type=artifact_type)
+            for path in paths:
+                if Path(path).is_file():
+                    artifact.add_file(str(path))
+            self.run.log_artifact(artifact)
+        except Exception as exc:  # W&B/network failures must not invalidate training outputs.
+            LOGGER.warning("W&B artifact upload failed; files remain available locally: %s", exc)
 
     def finish(self) -> None:
         if self.run is not None:

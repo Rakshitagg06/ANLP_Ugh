@@ -7,28 +7,21 @@ venv/
 .deps/
 .env
 .secrets/
+/wandb
 .DS_Store
 
 # Data and experiment artifacts
 data/raw/*
 data/processed/*
+data/train/
+data/dev/
+data/test/
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 outputs/*
-!outputs/predictions/
-!outputs/metrics/
-!outputs/checkpoints/
-!outputs/plots/
-outputs/predictions/*
-outputs/metrics/*
-outputs/checkpoints/*
-outputs/plots/*
+!outputs/analysis/
+outputs/analysis/latex_tables/
 wandb/
 *.out
 *.err
 
-# Keep empty directory structure
-!outputs/predictions/.gitkeep
-!outputs/metrics/.gitkeep
-!outputs/checkpoints/.gitkeep
-!outputs/plots/.gitkeep

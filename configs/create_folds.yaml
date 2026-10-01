@@ -6,7 +6,7 @@ experiment:
   output_dir: outputs/runs
 
 data:
-  path: data/raw/eng_train.csv
+  path: data/train/eng.csv
   id_column: id
   text_column: text
   det_label_column: polarization

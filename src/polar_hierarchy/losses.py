@@ -23,7 +23,10 @@ def noisy_or_logit(type_logits: torch.Tensor) -> torch.Tensor:
     s = F.softplus(type_logits).sum(dim=-1)
     split = math.log(2.0)
     small_branch = torch.log(torch.expm1(torch.clamp(s, min=1e-12, max=split)))
-    large_branch = s + torch.log1p(-torch.exp(-s))
+    # Clamp the unselected branch too: torch.where still backpropagates through
+    # it, and log1p(-exp(-s)) is -inf (NaN gradient) when s underflows to ~0.
+    s_large = torch.clamp(s, min=split)
+    large_branch = s_large + torch.log1p(-torch.exp(-s_large))
     return torch.where(s <= split, small_branch, large_branch)
 
 

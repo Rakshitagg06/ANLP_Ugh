@@ -202,6 +202,9 @@ class Trainer:
             "det_threshold": self.det_threshold,
             "type_thresholds": self.type_thresholds.tolist(),
         }
+        hf_path = self._queue_model_export(summary)
+        if hf_path is not None:
+            summary["hf_model_path"] = hf_path
         self._save_json(summary, self.run_dir / "metrics" / "outer_fold_metrics.json")
         self._save_prediction_records(outer_predictions)
         plot_per_label_f1(outer_metrics, self.run_dir / "plots")
@@ -221,6 +224,19 @@ class Trainer:
                 if isinstance(value, (int, float)):
                     tracked_summary[f"outer/per_label/{label}/{metric}"] = value
         self.tracker.log(tracked_summary)
+        if hf_path is not None:
+            self.tracker.set_summary({"hf_model_path": hf_path})
+        self.tracker.log_files_artifact(
+            f"{self.run_name}-outputs",
+            "run-outputs",
+            [
+                self.run_dir / "predictions" / "outer_fold_predictions.jsonl",
+                self.run_dir / "metrics" / "outer_fold_metrics.json",
+                self.run_dir / "resolved_config.json",
+                self.run_dir / "environment.json",
+                self.run_dir / "logs" / "events.jsonl",
+            ],
+        )
         self.tracker.log_images(
             {
                 "plots/loss_curves": self.run_dir / "plots" / "loss_curves.png",
@@ -368,6 +384,53 @@ class Trainer:
         self.det_threshold = float(state["det_threshold"])
         self.type_thresholds = np.asarray(state["type_thresholds"], dtype=np.float64)
         self._best_state = None
+
+    def _queue_model_export(self, summary: Dict[str, Any]) -> str | None:
+        """Write the restored best model to the upload queue as FP16 safetensors.
+
+        A separate uploader process pushes each queued folder to the Hugging Face
+        Hub and deletes it, so no model weights are retained locally.
+        """
+        export = self.config.get("export") or {}
+        queue_dir = export.get("hf_queue_dir")
+        repo_id = export.get("hf_repo_id")
+        if not queue_dir or not repo_id:
+            return None
+        from safetensors.torch import save_file
+
+        destination = Path(queue_dir) / self.run_name
+        partial = destination.with_name(destination.name + ".partial")
+        partial.mkdir(parents=True, exist_ok=True)
+        tensors = {
+            name: tensor.detach().to("cpu", dtype=torch.float16).contiguous()
+            if tensor.is_floating_point()
+            else tensor.detach().cpu().contiguous()
+            for name, tensor in self.model.state_dict().items()
+        }
+        save_file(tensors, partial / "model.safetensors", metadata={"format": "pt"})
+        self.tokenizer.save_pretrained(partial / "tokenizer")
+        metadata = {
+            "run_name": self.run_name,
+            "model_type": self.model_type,
+            "fold": self.fold,
+            "seed": self.seed,
+            "weights_dtype": "float16 (trained in float32 with AMP)",
+            "pretrained_name": self.config["model"]["pretrained_name"],
+            "best_epoch": summary["best_epoch"],
+            "best_validation_score": summary["best_validation_score"],
+            "det_threshold": self.det_threshold,
+            "type_thresholds": self.type_thresholds.tolist(),
+            "type_labels": list(TYPE_LABELS),
+            "outer_fold_metrics": {
+                key: value for key, value in summary.items() if isinstance(value, (int, float))
+            },
+        }
+        self._save_json(metadata, partial / "run_metadata.json")
+        save_resolved_config(self.config, partial / "resolved_config.json")
+        partial.rename(destination)
+        hf_path = f"{repo_id}/runs/{self.run_name}"
+        self.logger.info("Queued best model for upload to %s", hf_path)
+        return hf_path
 
     def _save_prediction_records(self, predictions: Dict[str, Any]) -> None:
         pred_det, pred_types = hard_predictions(
