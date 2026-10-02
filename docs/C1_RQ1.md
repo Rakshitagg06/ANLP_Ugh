@@ -5,6 +5,8 @@
 **Scope of this document:** Complete record of C1/RQ1: the original claim, experimental design, definitions of every relevant metric, results, statistical tests, scientific and mathematical interpretation, alternative evaluation, limitations, defensible conclusion, and the proposed end-submission extension.  
 **Status:** C1/RQ1 is complete under the frozen mid-submission protocol. The proposed extension is future work and must be reported separately from the frozen RQ1 result.
 
+**Numbering.** This note originally drafted the parent-to-child question as RQ3. The mid-submission report keeps the proposal's RQ3 (label-aware representations) and RQ4 (parameter comparison, not a leaderboard claim). The parent-to-child question is **RQ5** there, and the same name is used below.
+
 ---
 
 ## 1. Executive conclusion
@@ -837,24 +839,24 @@ The best extension is not to redefine RQ1 after observing the results. It is to 
 
 ### 18.1 Proposed research question
 
-> **RQ3:** Can a calibrated parent-to-child hierarchical model improve end-to-end polarization-type classification while preserving polarization-detection performance?
+> **RQ5:** Can a calibrated parent-to-child hierarchical model improve end-to-end polarization-type classification while preserving polarization-detection performance?
 
 ### 18.2 Main hypothesis
 
-> **H3:** A calibrated parent-to-child conditional model will achieve higher all-text TYPE macro-F1 than M2 and M4 while remaining non-inferior to M2 on DET macro-F1.
+> **H5:** A calibrated parent-to-child conditional model will achieve higher all-text TYPE macro-F1 than M2 and M4 while remaining non-inferior to M2 on DET macro-F1.
 
 This separates superiority on the outcome that hierarchy should improve from a guardrail on DET performance.
 
 ### 18.3 Confirmatory sub-hypotheses
 
-**H3a — all-text TYPE superiority**
+**H5a — all-text TYPE superiority**
 
 ```text
 TYPE macro-F1_all(M5) > TYPE macro-F1_all(M2)
 TYPE macro-F1_all(M5) > TYPE macro-F1_all(M4).
 ```
 
-**H3b — DET non-inferiority**
+**H5b — DET non-inferiority**
 
 ```text
 DET macro-F1(M5) − DET macro-F1(M2) > −delta.
@@ -862,14 +864,14 @@ DET macro-F1(M5) − DET macro-F1(M2) > −delta.
 
 A reasonable pre-declared margin is delta = 0.01 macro-F1. The margin must be fixed before observing final results and justified as the largest acceptable DET degradation for the gain in end-to-end TYPE validity.
 
-**H3c — conditional TYPE retention**
+**H5c — conditional TYPE retention**
 
 ```text
 M5 retains gold-polarized TYPE macro-F1 close to M2
 while reducing neutral-text TYPE false positives and LVR.
 ```
 
-H3c can be treated as secondary unless a formal non-inferiority margin is also pre-declared for gold-polarized TYPE F1.
+H5c can be treated as secondary unless a formal non-inferiority margin is also pre-declared for gold-polarized TYPE F1.
 
 ---
 
@@ -1149,7 +1151,7 @@ Interpretation: hierarchy is beneficial, but parent-to-child factorization and f
 
 ### 23.2 M5 improves all-text TYPE but loses DET
 
-Interpretation: structural validity still trades against detection quality. The non-inferiority part of H3 fails even if H3a succeeds.
+Interpretation: structural validity still trades against detection quality. The non-inferiority part of H5 fails even if H5a succeeds.
 
 ### 23.3 M5 preserves DET but loses conditional TYPE recall
 
@@ -1308,7 +1310,7 @@ For the ACL paper, distribute this material as follows:
 
 ### Future work / final-submission extension
 
-- RQ3/H3.
+- RQ5/H5.
 - M5 parent-to-child factorization.
 - Full-set threshold calibration.
 - Superiority and non-inferiority tests.

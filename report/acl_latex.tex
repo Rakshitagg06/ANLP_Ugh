@@ -106,9 +106,10 @@ unconstrained multi-task learning (M2)?
 training-time structure (M4-core) preserve more \TYPE{} recall and F1 than
 post-hoc deterministic reconciliation (M3)?
 \end{itemize}
-Label-aware representations (C3/RQ3) and the parameter-efficiency comparison
-with 12B--27B systems (C4/RQ4) are scheduled after the mid-submission
-(\S\ref{sec:remaining}).
+What remains is scheduled in \S\ref{sec:remaining}: a decoder extension
+that does not reopen these two questions, a parent-to-child model (RQ5),
+then the proposal's label-aware comparison (RQ3) and a parameter comparison
+that does not claim the leaderboard (RQ4).
 
 \paragraph{Summary of findings.}
 Unconstrained models violate the hierarchy on 62\% of texts, while M3 and
@@ -205,9 +206,12 @@ We use the official English data: 3{,}222 training, 160 development and
 summarises the training split. The gold labels satisfy the hierarchy exactly
 in all three files. \textit{Other} co-occurs with named dimensions in 121
 training texts, so we model it as an ordinary fifth label rather than an
-exclusive residual. The supplied test file contains label columns whose
-provenance is unconfirmed. Until that is resolved, we treat it as strictly
-held out and do not use it. The 160-text development set has single-digit
+exclusive residual. The supplied test file contains the same label columns. We used them only
+to check the hierarchy (533 polarized, 919 non-polarized, zero violations).
+Their provenance relative to the official Codabench release is unconfirmed,
+so no model is trained or scored on them. One training text is repeated in
+the test file under a different id. It does not affect this
+cross-validation, and it will be excluded from any later test score. The 160-text development set has single-digit
 positive counts for the rare dimensions, so it cannot support ablation claims
 \citep{smash-2026}. All conclusions therefore rest on out-of-fold predictions
 over the 3{,}222 training texts.
@@ -644,8 +648,8 @@ Racial/ethnic ($-$0.026).
 \end{itemize}
 One plausible reading is that \textit{Other}, the most heterogeneous label,
 absorbs the strongest push-down from the noisy-OR \DET{} loss on non-polarized
-text. That motivates the separate treatment of \textit{Other} proposed for
-C3.
+text. That motivates the separate treatment of \textit{Other} in RQ3
+(\S\ref{sec:remaining}).
 
 \subsection{Gating audit: what M3 removes}
 \label{sec:audit}
@@ -772,8 +776,10 @@ no dimension, so \TYPE{} recall on polarized texts is bounded by \DET{}
 recall. M4-core raises \DET{} recall (0.831 vs.\ 0.761), which is where its
 Political and Gender gains come from, but pays in \DET{} precision because
 its per-label thresholds never see non-polarized text. The binding constraint
-is the \emph{decoder}, not the training objective, which makes a
-\DET{}-aware threshold search the most informative next experiment.
+is the \emph{decoder}, not the training objective. The first new experiment
+is therefore a \DET{}-aware threshold search. It does not test whether the
+\emph{direction} of the hierarchy is what failed, so the second experiment
+is a parent-to-child model (RQ5, \S\ref{sec:remaining}).
 
 % ===================================================================
 \section{Remaining Work and Timeline}
@@ -782,38 +788,60 @@ is the \emph{decoder}, not the training objective, which makes a
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}p{1.6cm}p{5.3cm}@{}}
+\begin{tabular}{@{}p{1.55cm}p{5.45cm}@{}}
 \toprule
 Dates & Work package \\
 \midrule
-Oct 2--6 & Verify the official Subtask~2 scorer; \DET{}-aware threshold search
-for M4-core (joint objective on all inner-validation texts, grid below 0.20);
-re-run M4-core (25 runs). \\
-Oct 7--14 & C3/RQ3: label-aware cross-attention heads and separate handling
-of \textit{Other}; ablations; single- vs.\ multi-label analysis. \\
-Oct 15--20 & Reference baselines from the proposal (TF-IDF+LR, BERT,
-RoBERTa); uncertainty-weighted $\lambda$ \citep{kendall2018}. \\
-Oct 21--25 & C4/RQ4: performance versus parameter count against the
-12B--27B leaderboard systems; final fit with checkpoint retention; dev
-evaluation (and test, once provenance is confirmed). \\
-Oct 26--31 & Error analysis of \textit{Other} and false-positive boundary
+Oct 2--3 & Read the official Subtask~2 scorer. Before any new run, freeze
+whether later \TYPE{} scores use all texts, and freeze the RQ5 tests and
+the \DET{} margin $\delta=0.01$. \\
+Oct 4--6 & Decoder extension, not a revision of RQ1: rerun M4-core (25 runs)
+with thresholds tuned on \emph{all} inner-validation texts and a grid below
+0.20. Compare only to frozen M4-core, M2, and M3. \\
+Oct 7--16 & RQ5. Parent-to-child M5, soft and hard-consistency variants, same
+encoder, folds, and seeds. Detection probability gates the dimension
+probabilities. \DET{} macro-F1 must be no more than $\delta$ below M2. \\
+Oct 17--23 & RQ3, as in the proposal: label-aware cross-attention and a
+separate \textit{Other} head, on the hierarchy variant kept after RQ5.
+Single-label vs.\ multi-label analysis. \\
+Oct 24--27 & RQ4, without a leaderboard claim. Set our 184M out-of-fold
+scores beside the published 12B--27B English numbers and state the split
+difference in the same table. One final fit with checkpoints kept.
+Development data is a sanity check only. \\
+Oct 28--31 & Error analysis of \textit{Other} and false-positive boundary
 cases; final report and code release. \\
 \bottomrule
 \end{tabular}
-\caption{Plan to the final submission (October 31).}
+\caption{Plan to the final submission (October 31). RQ1 and RQ2 are closed
+under the frozen protocol. Later rows are new experiments.}
 \label{tab:timeline}
 \end{table}
 
-Table~\ref{tab:timeline} lists the remaining work. Three changes to the
-proposal timeline follow from the mid-submission results.
+Table~\ref{tab:timeline} is the plan. The open question is no longer whether
+noisy-OR wins on the frozen macro-F1 numbers. It is whether the
+consistency--recall trade-off comes from the decoder, from aggregating
+dimensions into detection, or from the hierarchy itself.
 \begin{enumerate}\setlength\itemsep{1pt}
-\item M3 is already complete. It was a re-implementation of the
-\citet{sagarmatha-2026} rule rather than their released code, so its slot
-is reassigned to fixing M4-core's decoder.
-\item The classical and BERT/RoBERTa baselines were deferred so that the
-controlled M1--M4 ladder could be completed first.
-\item Any revised decoding rule is a \emph{protocol extension}, reported
-separately from the frozen RQ1/RQ2 answers given here.
+\item The October 4--6 rerun changes only M4-core's threshold rule. Its
+results are reported beside the frozen RQ1/RQ2 tables, not instead of them.
+M3 stays the re-implementation of the \citet{sagarmatha-2026} rule already
+described above.
+\item RQ5 is the test the audit motivates. M4-core builds detection from the
+dimensions. M5 does the reverse: a calibrated detection probability
+suppresses dimension probabilities. The primary \TYPE{} metric is whichever
+scope the scorer check freezes on October 2--3. The guardrail is
+non-inferiority: \DET{} macro-F1 no more than $0.01$ below M2, fixed before
+the runs.
+\item RQ3 and RQ4 from the proposal remain, in that order. RQ3 runs on the
+hierarchy variant RQ5 retains, so a new head is not confounded with a new
+constraint. RQ4 cites the published 0.825 and 0.532 scores as external
+numbers on the official test set. Our scores stay training-set
+cross-validation. We will not call that a leaderboard comparison. The test
+file stays unused until its labels are confirmed, and the duplicated
+train/test text is then left out.
+\item TF--IDF, BERT, RoBERTa, and uncertainty-weighted $\lambda$
+\citep{kendall2018} are deferred. The weeks they occupied now belong to the
+decoder extension and to RQ5.
 \end{enumerate}
 
 % ===================================================================
@@ -832,7 +860,8 @@ macro accuracy, better multi-label recall and lower variance, but it does not
 beat the unconstrained baselines on the frozen metric.
 \end{itemize}
 Whether structure can \emph{eliminate} the consistency--recall trade-off now
-hinges on its decoder, which the next stage addresses.
+depends on the decoder first and on the direction of the hierarchy second.
+Both are separate from the frozen answers above.
 
 % ===================================================================
 \section*{Limitations}

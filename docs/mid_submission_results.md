@@ -273,12 +273,12 @@ Figure: [Per-label F1](../report/figures/fig_per_label_f1.pdf)
 - "Noisy-OR improves macro-F1 over independent or multi-task models" (RQ1) is not supported under the frozen protocol.
 - "Structure preserves more TYPE recall than gating" (RQ2 primary) is not demonstrated.
 
-**Recommended next steps** (post-mid; keep them labelled as protocol extensions, not reruns of RQ1/RQ2):
+**Recommended next steps** (post-mid; the decoder change and RQ5 are new experiments, not reruns of RQ1/RQ2). This matches the report timeline.
 
-1. Check the official Subtask 2 scorer and, if it scores all texts, promote the all-texts view to primary for future work.
-2. Give M4-core a DET-aware decoding rule: tune TYPE thresholds on all inner-validation texts with a joint DET + TYPE objective, and extend the grid below 0.20.
-3. Select M4-core checkpoints on a joint DET/TYPE criterion and rerun M4-core only (25 runs ≈ 75 GPU-minutes).
-4. Proceed to C3 (label-aware representations; `Other` handling, where M4-core loses recall) and C4 (parameter-efficiency comparison).
+1. Check the official Subtask 2 scorer and freeze whether later TYPE scores use all texts. Freeze the RQ5 tests and the DET margin δ = 0.01 before any new run.
+2. Decoder extension: rerun M4-core only (25 runs), with TYPE thresholds tuned on all inner-validation texts and a grid below 0.20. Report it beside the frozen tables.
+3. RQ5: parent-to-child M5 (soft and hard-consistency variants). Same encoder, folds, and seeds. Do not call this RQ3.
+4. Then proposal RQ3 (label-aware heads and a separate `Other` head) on the hierarchy variant RQ5 keeps, and proposal RQ4 as a non-leaderboard parameter comparison: our out-of-fold scores beside the published 12B–27B numbers, with the split difference stated. TF–IDF, BERT, RoBERTa, and uncertainty-weighted λ are deferred.
 
 ## 12. Reproducing this analysis
 
