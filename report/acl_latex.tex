@@ -715,16 +715,15 @@ any new run.
 
 \paragraph{Decoder extension (not a new RQ).}
 \emph{Does M4-core improve once its thresholds see neutral texts?} In the
-current code, \TYPE{} thresholds are chosen only on gold-polarized
-inner-validation texts, they are re-chosen every epoch before the
-checkpoint decision, and neither inner-validation probabilities nor
-checkpoints were saved. A proper test therefore needs a code change and new
-runs. We will rerun M4-core (25 runs) with thresholds tuned on \emph{all}
+current code, \TYPE{} thresholds use only gold-polarized inner-validation
+texts, and no inner-validation probabilities or checkpoints were saved, so a
+proper test needs a code change and new runs. We will rerun M4-core (25 runs) with thresholds tuned on \emph{all}
 inner-validation texts over the grid $\{0.05, 0.10, \dots, 0.80\}$, and keep
 checkpoint selection on gold-polarized \TYPE{} macro-F1, so that only the
-threshold rule changes. These runs will also save inner-validation
-probabilities, which lets us compare M3 and M4-core at the same detection
-operating point without tuning on held-out folds. Re-thresholding the
+threshold rule changes. Because M3 is derived from M2, we will also rerun M2
+(25 runs). Both reruns save inner-validation probabilities, which lets us
+place M3 and M4-core at the same detection precision, and separately at the
+same detection recall, without tuning on held-out folds. Re-thresholding the
 already saved held-out predictions would tune on test data, so we will report
 it only as exploratory.
 \emph{Why it matters:} RQ1 traced M4-core's \DET{} loss to thresholds tuned
@@ -803,8 +802,8 @@ The TF-IDF, BERT and RoBERTa baselines and learned loss weighting
 \toprule
 Dates & Work \\
 \midrule
-Oct~2--3 & Read the official Subtask~2 scorer. Fix whether later \TYPE{} scores use all texts, the RQ5 tests and the margin $\delta=0.01$. \\
-Oct~4--6 & Decoder extension: change threshold selection to all inner-validation texts (grid 0.05--0.80) and save inner-validation probabilities; rerun M4-core (25 runs); matched operating-point comparison of M3 and M4-core. \\
+Oct~2--3 & Read the official Subtask~2 scorer and record whether later \TYPE{} scores use all texts or gold-polarized texts only. \\
+Oct~4--6 & Decoder extension: change threshold selection to all inner-validation texts (grid 0.05--0.80) and save inner-validation probabilities; rerun M4-core and M2 (25 runs each); matched operating-point comparison of M3 and M4-core. \\
 Oct~7--16 & RQ5: parent-to-child M5, soft and hard decoders (25 runs each); test H5a and H5b; apply the keep-rule. \\
 Oct~17--23 & RQ3: label-aware heads and a separate Other head on the kept variant; single- vs.\ multi-label analysis. \\
 Oct~24--27 & RQ4: kept variant (retrained with checkpoint) and frozen M4-core vs.\ published 12B--27B results; development set scored once. \\
