@@ -15,7 +15,6 @@ compares four ways of handling it under one controlled setup.
 | Mid-submission report (ACL format) | [report/report.pdf](report/report.pdf) |
 | Weights & Biases — all 100 training runs (public) | <https://wandb.ai/rakshitagg06-iiit-hyderabad/anlp-project> |
 | Code | <https://github.com/Rakshitagg06/ANLP_Ugh> |
-| Hugging Face models | Not yet released. The mid-submission sweep is evaluated by cross-validation and keeps no checkpoints; the final selected model will be trained with checkpoints and released on Hugging Face for the final submission. |
 
 The W&B project holds each run's configuration, loss and metric curves, and
 its out-of-fold predictions and metrics as artifacts.
@@ -131,9 +130,3 @@ metrics, plots, logs and resolved config. Model weights are not kept unless
   10% validation split; each held-out fold is predicted once.
 - For each seed, the five held-out folds are scored as one 3,222-text set;
   results are mean ± sd over seeds.
-- Comparisons use a paired bootstrap over texts (2,000 resamples) with Holm
-  correction over the six pre-declared RQ1/RQ2 tests.
-- All reported numbers are computed from saved predictions, not from W&B
-  summaries.
-
-Details: [docs/experiments.md](docs/experiments.md) and the report.
