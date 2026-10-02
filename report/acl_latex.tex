@@ -234,8 +234,9 @@ goes back to \citet{mullenbach-etal-2018-explainable}.
 Most POLAR systems tuned per-label thresholds
 \citep{naseem-etal-2026-semeval}, and the F1-optimal threshold of a
 classifier depends on its calibration \citep{lipton2014thresholding}. We
-therefore treat threshold tuning as part of each model, using the same
-search for all models. For statistics we follow the paired bootstrap of
+therefore treat threshold tuning as part of each model. All models use the
+same \TYPE{} threshold grid; M1 and M2 also tune a \DET{} threshold, while
+M4-core has none. For statistics we follow the paired bootstrap of
 \citet{koehn-2004-statistical}, correct for multiple tests with
 \citet{holm1979}, and build folds with multi-label stratification
 \citep{sechidis2011}.
@@ -538,8 +539,8 @@ consistency. Their pre-declared scores are statistically tied
 (Table~\ref{tab:primary}). The \TYPE{} F1 difference is +0.008 with a 95\%
 CI of [$-$0.009, +0.022], and the seeds split 3/5 and 2/5. \textbf{H2 is not
 supported}, and neither is the opposite. The intervals do rule out large
-effects: M4-core recovers less than a fifth of the 0.127 recall that gating
-costs relative to M2.
+effects: the upper end of the recall interval, +0.023, is less than a fifth
+of the 0.127 recall that gating costs relative to M2.
 
 \begin{table}[t]
 \centering\small
@@ -674,23 +675,18 @@ and M4-core share the same encoder, data and thresholds.
 RoBERTa baselines do not affect RQ1 or RQ2, so they come after the
 controlled comparison.
 \end{itemize}
-We also built the supporting infrastructure: configuration-driven training,
-saved predictions for every run, experiment tracking, an analysis pipeline
-that regenerates every table from the saved predictions, and unit tests.
-These tests caught two bugs before the main sweep: a crash in the M1
-detection model, and an unstable noisy-OR gradient when all type logits are
-very negative.
+We also built the infrastructure: configuration-driven training, saved
+predictions, experiment tracking, an analysis pipeline that regenerates every
+table, and unit tests, which caught two bugs before the main sweep.
 
 % ===================================================================
 \section{Discussion}
 \label{sec:discussion}
 
 We expected the structured model to avoid gating's recall loss because it
-``discards nothing''. The results show why this was too simple. Any model
-that respects the hierarchy cannot recover a type on a text it fails to
-detect, so its type recall is limited by its detection coverage. Where the
-constraint is enforced does not remove this limit; it changes who pays for
-it. Post-hoc gating keeps the unconstrained model's type discrimination but
+``discards nothing''. This was too simple: a consistent model cannot recover a
+type on a text it fails to detect, and where the constraint is enforced only
+changes who pays for that limit. Post-hoc gating keeps the unconstrained model's type discrimination but
 inherits its detector's misses. Training-time noisy-OR detects more texts,
 but its loss concentrates evidence in the dominant label and its decoder
 inherits thresholds that never saw neutral text.
@@ -718,11 +714,19 @@ one new question (RQ5). All primary tests and margins will be fixed before
 any new run.
 
 \paragraph{Decoder extension (not a new RQ).}
-\emph{Does M4-core improve once its thresholds see neutral texts?} We will
-rerun M4-core (25 runs) with thresholds tuned on \emph{all}
-inner-validation texts and a grid that extends below 0.20. Using the saved
-probabilities, we will also compare M3 and M4-core at the same detection
-operating point, which needs no new training.
+\emph{Does M4-core improve once its thresholds see neutral texts?} In the
+current code, \TYPE{} thresholds are chosen only on gold-polarized
+inner-validation texts, they are re-chosen every epoch before the
+checkpoint decision, and neither inner-validation probabilities nor
+checkpoints were saved. A proper test therefore needs a code change and new
+runs. We will rerun M4-core (25 runs) with thresholds tuned on \emph{all}
+inner-validation texts over the grid $\{0.05, 0.10, \dots, 0.80\}$, and keep
+checkpoint selection on gold-polarized \TYPE{} macro-F1, so that only the
+threshold rule changes. These runs will also save inner-validation
+probabilities, which lets us compare M3 and M4-core at the same detection
+operating point without tuning on held-out folds. Re-thresholding the
+already saved held-out predictions would tune on test data, so we will report
+it only as exploratory.
 \emph{Why it matters:} RQ1 traced M4-core's \DET{} loss to thresholds tuned
 without neutral texts, and RQ2 compared the two consistent models at
 different operating points. This is the cheapest test of whether those
@@ -736,10 +740,20 @@ model, M5, does the reverse. It keeps an independent \DET{} head $d$ and a
 conditional type head $q_k$, and predicts $p_k = d \cdot q_k$, the
 factorization $P(t_k \mid x) = P(d \mid x)\,P(t_k \mid d, x)$ implied by the
 hierarchy. Low detection confidence then softly lowers every type, and a
-confident type can no longer switch detection on. We will test a soft and a
-hard-consistency variant with the same encoder, folds and seeds. The
-guardrail is non-inferiority: \DET{} macro-F1 no more than $\delta=0.01$
-below M2.
+confident type can no longer switch detection on. The \DET{} head is
+trained with BCE on all texts. Because $q_k$ means $P(t_k \mid d=1, x)$, its
+weighted BCE is computed on gold-polarized texts only. Thresholds are tuned
+on all inner-validation texts over the same grid as the decoder extension.
+We will test two decoders with the same encoder, folds and seeds:
+\emph{soft}, $\hat t_k = \mathbf 1[d\,q_k \ge \tau_k]$ and
+$\hat d = \mathbf 1[d \ge \tau_D]$; and \emph{hard}, which also requires
+$\hat d = 1$ for any $\hat t_k = 1$. Two hypotheses are fixed in advance.
+\textbf{H5a:} M5 has higher \TYPE{} macro-F1 than M2 and than the
+decoder-extension M4-core, on the scoring scope fixed on Oct~2--3.
+\textbf{H5b} (non-inferiority): \DET{} macro-F1 is at most $\delta=0.01$
+below M2. H5b is decided by the lower end of the 95\% paired bootstrap
+interval for M5$-$M2, which must lie above $-0.01$; the point estimate alone
+is not enough.
 \emph{Why it matters:} the decoder extension can fix M4-core's thresholds,
 but not the fact that one confident type switches detection on and absorbs
 the credit for the others (\S\ref{sec:rq2}). RQ5 tests whether the hierarchy
@@ -751,10 +765,12 @@ helps when it follows the direction of the label definition.
 type gets a learned query that attends over the tokens
 \citep{mullenbach-etal-2018-explainable,nestor-etal-2026-polarizedteam}, and
 Other gets a separate head on the pooled representation, since it has no
-single meaning. RQ3 will run on the hierarchy variant kept after RQ5, so a
-new head is not confounded with a new constraint.
+single meaning. RQ3 will run on one hierarchy variant, chosen by a fixed
+keep-rule: the M5 variant that passes H5b; if both pass, the one with higher
+\TYPE{} macro-F1; if neither passes, the decoder-extension M4-core. This way
+a new head is not confounded with a new constraint.
 \emph{Why it matters:} Gender/sexual and Other are the weakest labels for
-every model (F1 $\le$ 0.29) and lose most under noisy-OR, and all five types
+every model (F1 below 0.30) and lose most under noisy-OR, and all five types
 currently share one pooled vector. Type classification is also where the
 task has the most headroom (0.532 best vs.\ 0.347 baseline).
 
@@ -763,19 +779,18 @@ task has the most headroom (0.532 best vs.\ 0.347 baseline).
 systems that lead the English leaderboard, relative to model size?} We will
 place our out-of-fold scores beside the published English results (0.825
 \DET{}, 0.532 \TYPE{}) and state clearly that the two come from different
-data splits. We will not call this a leaderboard comparison. One final model
-will be trained with its checkpoint kept, and the development set will serve
-only as a sanity check. The test file stays unused until its labels are
+data splits. We will not call this a leaderboard comparison. We will compare
+two models: the variant chosen by the keep-rule, trained once more with its
+checkpoint kept, and the frozen M4-core. The development set will be scored
+once, as a sanity check, and will not be used to choose between models. The test file stays unused until its labels are
 confirmed; the one text it shares with the training set will then be left
 out.
-\emph{Why it matters:} it shows how much of the gap to large models a small,
-structured encoder closes, which is the ``structure over scale'' question in
-our title.
+\emph{Why it matters:} it measures how much of the gap to large models a
+small structured encoder closes, the ``structure over scale'' question.
 
 \paragraph{Deferred.}
 The TF-IDF, BERT and RoBERTa baselines and learned loss weighting
-\citep{kendall2018} are deferred. Their time now goes to the decoder
-extension and RQ5, which test our main findings directly.
+\citep{kendall2018} are deferred in favour of the decoder extension and RQ5.
 
 % ===================================================================
 \section{Timeline}
@@ -789,10 +804,10 @@ extension and RQ5, which test our main findings directly.
 Dates & Work \\
 \midrule
 Oct~2--3 & Read the official Subtask~2 scorer. Fix whether later \TYPE{} scores use all texts, the RQ5 tests and the margin $\delta=0.01$. \\
-Oct~4--6 & Decoder extension: rerun M4-core (25 runs) with thresholds tuned on all texts; operating-point comparison of M3 and M4-core. \\
-Oct~7--16 & RQ5: parent-to-child M5, soft and hard variants (25 runs each). \\
-Oct~17--23 & RQ3: label-aware heads and a separate Other head on the variant kept after RQ5; single- vs.\ multi-label analysis. \\
-Oct~24--27 & RQ4: comparison with published 12B--27B results; one final model with checkpoint; development sanity check. \\
+Oct~4--6 & Decoder extension: change threshold selection to all inner-validation texts (grid 0.05--0.80) and save inner-validation probabilities; rerun M4-core (25 runs); matched operating-point comparison of M3 and M4-core. \\
+Oct~7--16 & RQ5: parent-to-child M5, soft and hard decoders (25 runs each); test H5a and H5b; apply the keep-rule. \\
+Oct~17--23 & RQ3: label-aware heads and a separate Other head on the kept variant; single- vs.\ multi-label analysis. \\
+Oct~24--27 & RQ4: kept variant (retrained with checkpoint) and frozen M4-core vs.\ published 12B--27B results; development set scored once. \\
 Oct~28--31 & Error analysis of Other and neutral false alarms; final report and code release. \\
 \bottomrule
 \end{tabular}
@@ -803,23 +818,20 @@ every later row is a new experiment.}
 
 Table~\ref{tab:timeline} gives the plan. Each 25-run condition takes about
 one GPU-hour on our hardware, so the training budget is not a risk. The main
-risks are scientific: M5 may lose \DET{} recall through its gate, and the
-test-label question may not be resolved in time. In that case RQ4 will rely
-on the development set and the published numbers, and will say so.
+risks are scientific: M5 may lose \DET{} recall through its gate and fail
+H5b, in which case RQ3 falls back to the decoder-extension M4-core; and if
+the test-label question stays open, RQ4 will say so and rely on the
+published numbers.
 
 % ===================================================================
 \section{Conclusion}
 
-We set out to test whether the POLAR detection/type hierarchy should be part
-of the model rather than a rule applied afterwards. Unconstrained models
-contradict the hierarchy on most texts. A noisy-OR model removes all
-contradictions but does not beat independent or multi-task models on our
-pre-declared metrics, and it ties with post-hoc gating. The analysis shows
-why: consistency limits type recall to what is detected, the noisy-OR
-decoder inherits thresholds that never saw neutral text, and its loss
-favours the dominant label. Gating, for its part, removes almost a quarter
-of correct labels. These are specific and testable causes, and the final
-stage tests them directly.
+Unconstrained models contradict the POLAR hierarchy on most texts. A
+noisy-OR model removes every contradiction but does not beat independent or
+multi-task models on our pre-declared metrics, and it ties with post-hoc
+gating, which itself removes almost a quarter of correct labels. We traced
+these outcomes to specific, testable causes, and the final stage tests them
+directly.
 
 % ===================================================================
 \section*{Limitations}

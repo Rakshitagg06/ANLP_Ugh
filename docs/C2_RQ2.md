@@ -570,11 +570,15 @@ The extension must not redefine RQ2 after seeing the result. The analyses above 
 
 ### 15.2 H4 — operating-point-matched comparison
 
-The saved predictions already contain M2's DET probabilities and M4's noisy-OR DET probabilities, so this comparison needs no retraining:
+A confirmatory version of this comparison **requires a code change and new runs**. In the frozen code, TYPE thresholds are chosen only on gold-polarized inner-validation texts (`metrics.py`, `select_type_thresholds`), they are re-chosen every epoch before the checkpoint decision (`trainer.py`), and neither inner-validation probabilities nor checkpoints were saved. Only the held-out-fold predictions exist, and choosing operating points on them would tune on test data.
 
-1. Sweep M3's DET threshold and M4's TYPE threshold scale on inner-validation data.
-2. Select the points at which both reach the same DET precision (e.g., M2's 0.722) and, separately, the same DET recall.
-3. Compare TYPE macro-recall and macro-F1 at each matched point on the outer folds.
+The confirmatory procedure is therefore:
+
+1. Change threshold selection to use all inner-validation texts over the grid {0.05, 0.10, …, 0.80}, keep checkpoint selection on gold-polarized TYPE macro-F1, and save inner-validation probabilities.
+2. Rerun M4-core (25 runs) and M2 where needed, then sweep M3's DET threshold and M4's TYPE threshold scale **on the saved inner-validation probabilities**, selecting the points at which both reach the same DET precision (e.g., M2's 0.722) and, separately, the same DET recall.
+3. Apply those frozen operating points to the outer folds and compare TYPE macro-recall and macro-F1.
+
+Re-thresholding the already saved held-out predictions is allowed only as an **exploratory** analysis and must be labelled as such. (A leakage-free middle ground without retraining is cross-fitting: choose each fold's thresholds on the other four folds' saved predictions. It is weaker, because each fold's predictions come from a different model.)
 
 ```text
 H4: TYPE macro-recall(M4 | matched DET precision) > TYPE macro-recall(M3 | matched DET precision).
