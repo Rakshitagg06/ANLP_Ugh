@@ -140,7 +140,7 @@ At equal consistency, does building the hierarchy into training keep more
 \end{block}
 \vspace{2pt}
 \small The six tests were fixed before any experiment and are Holm-corrected together.\\
-\footnotesize The ``scale'' comparison with 12B--27B systems is a final-stage deliverable (RQ4).
+\footnotesize The comparison with 12B--27B systems (RQ4) is a secondary lens for the final stage, not a headline claim.
 \end{frame}
 
 % =====================================================================
@@ -459,9 +459,10 @@ even on texts that truly have them.
 \item \textbf{Some analyses were designed after seeing the results}: all-text
   scoring, the coverage decomposition, the probability profile and per-label
   differences are exploratory and uncorrected.
-\item \textbf{RQ4 splits differ.} Published 12B--27B scores are on the official
-  test set; ours are cross-validation on the training set. The official test
-  labels are public (identical to our copy), so the final stage can close this gap.
+\item \textbf{No comparison with large models yet.} Our scores are
+  cross-validation on the training set; published 12B--27B scores are on the
+  official test set. RQ4 will score the official test set (labels public,
+  identical to our copy) and is a secondary lens, not a headline result.
 \item English only, five seeds, one GPU; official scorer scope unverified.
 \end{itemize}
 \end{frame}
@@ -481,9 +482,10 @@ even on texts that truly have them.
 \item \textbf{RQ3 (proposal): label-aware heads} and a separate Other head, on
   the variant kept after RQ5.\\
   \emph{Why:} rare labels and Other are weakest (F1 below 0.30).
-\item \textbf{RQ4 (proposal): 184M vs.\ 12B--27B}, beside the published
-  results; no leaderboard claim.\\
-  \emph{Why:} the ``structure over scale'' question.
+\item \textbf{RQ4 (proposal, secondary lens): 184M vs.\ 12B--27B.}
+  A 65--150$\times$ smaller encoder is not expected to match them; we measure
+  the share of the baseline-to-best gap it closes, on the official test set.\\
+  \emph{Why:} context against much larger systems, without overclaiming.
 \end{enumerate}
 \end{frame}
 
@@ -535,7 +537,7 @@ Oct 2--3 & Read the official scorer; record the \TYPE{} scoring scope \\
 Oct 4--6 & Decoder extension: rerun M4-core and M2 (25 runs each) \\
 Oct 7--16 & RQ5: parent-to-child M5, soft and hard decoders \\
 Oct 17--23 & RQ3: label-aware heads on the kept variant \\
-Oct 24--27 & RQ4: comparison with published 12B--27B results \\
+Oct 24--27 & RQ4 (secondary): gap closure on the official test set \\
 Oct 28--31 & Error analysis, final report and code release \\
 \bottomrule
 \end{tabular}
@@ -611,7 +613,7 @@ M4 noisy-OR & Done as M4-core \\
 Full ladder and paired tests & Done (ahead of plan) \\
 Label-aware attention, Other head & Kept as RQ3 \\
 TF-IDF, BERT, RoBERTa baselines & Deferred \\
-Comparison with 12B--27B systems & Kept as RQ4 \\
+Comparison with 12B--27B systems & Kept as RQ4 (secondary) \\
 \bottomrule
 \end{tabular}
 \end{frame}

@@ -349,12 +349,12 @@ texts: 1{,}175 polarized and 2{,}047 not. Type support is Political 1{,}150,
 Racial/ethnic 281, Religious 112, Gender/sexual 72 and Other 126. Among the
 polarized texts, 426 have two or more types. Political appears in 98\% of
 polarized texts, so it behaves almost like a copy of \DET{}. The gold labels
-satisfy Eq.~\ref{eq:hier} with no exceptions. The supplied test file also
-contains labels. We used them only to check the hierarchy (533 polarized,
-919 not, no violations); because their provenance relative to the official
-release is unconfirmed, no model is trained or scored on them. One training
-text also appears in the test file under a different id; it does not affect
-our cross-validation. The 160-text development set is too small to compare
+satisfy Eq.~\ref{eq:hier} with no exceptions. Our test file is identical
+(same checksum) to the organisers' public release, so its labels are
+official. So far we used them only to check the hierarchy (533 polarized,
+919 not, no violations); no model is trained, tuned or scored on them before
+RQ4. One training text also appears in the test file under a different id;
+it does not affect our cross-validation. The 160-text development set is too small to compare
 rare labels and was not used.
 
 \paragraph{Protocol.}
@@ -651,7 +651,7 @@ Full 5$\times$5 ladder and paired tests & Done (ahead of plan) \\
 Label-aware attention, Other head & Kept as RQ3 \\
 TF-IDF, BERT, RoBERTa baselines & Deferred \\
 Learned loss weighting & Deferred \\
-Comparison with 12B--27B systems & Kept as RQ4 \\
+Comparison with 12B--27B systems & Kept as RQ4 (secondary) \\
 Leaderboard claim & Not made (RQ4) \\
 \bottomrule
 \end{tabular}}
@@ -665,15 +665,12 @@ mid-October, is complete, including the full five-fold, five-seed sweep and
 the significance tests. Three changes were deliberate:
 \begin{itemize}\setlength\itemsep{1pt}
 \item \textbf{M4 became M4-core.} The proposal's M4 combined label-aware
-attention with noisy-OR. Testing both at once would make it impossible to
-tell which one causes a difference, so we first isolated the hierarchy
-mechanism. Label-aware attention remains RQ3.
-\item \textbf{M3 was re-implemented.} Instead of adapting the released
-Sagarmatha system, we applied its inference rule to our own M2, so that M3
-and M4-core share the same encoder, data and thresholds.
-\item \textbf{Classical baselines were deferred.} The TF-IDF, BERT and
-RoBERTa baselines do not affect RQ1 or RQ2, so they come after the
-controlled comparison.
+attention with noisy-OR; we first isolated the hierarchy mechanism, so that
+any difference has one cause. Label-aware attention remains RQ3.
+\item \textbf{M3 was re-implemented.} We applied Sagarmatha's inference
+rule to our own M2, so M3 and M4-core share encoder, data and thresholds.
+\item \textbf{Classical baselines were deferred.} They do not affect RQ1 or
+RQ2.
 \end{itemize}
 We also built the infrastructure: configuration-driven training, saved
 predictions, experiment tracking, an analysis pipeline that regenerates every
@@ -773,19 +770,23 @@ every model (F1 below 0.30) and lose most under noisy-OR, and all five types
 currently share one pooled vector. Type classification is also where the
 task has the most headroom (0.532 best vs.\ 0.347 baseline).
 
-\paragraph{RQ4 (proposal): How does a 184M model compare with 12B--27B systems?}
-\emph{How does our best structured encoder compare with the much larger
-systems that lead the English leaderboard, relative to model size?} We will
-place our out-of-fold scores beside the published English results (0.825
-\DET{}, 0.532 \TYPE{}) and state clearly that the two come from different
-data splits. We will not call this a leaderboard comparison. We will compare
-two models: the variant chosen by the keep-rule, trained once more with its
-checkpoint kept, and the frozen M4-core. The development set will be scored
-once, as a sanity check, and will not be used to choose between models. The test file stays unused until its labels are
-confirmed; the one text it shares with the training set will then be left
-out.
-\emph{Why it matters:} it measures how much of the gap to large models a
-small structured encoder closes, the ``structure over scale'' question.
+\paragraph{RQ4 (proposal, secondary): How much of the gap to 12B--27B systems does a 184M model close?}
+RQ4 is a secondary analytical lens, not a headline result. The English
+leaders are 65--150 times larger than our encoder (12B--27B vs.\ 184M
+parameters), so a small encoder is not expected to match them in absolute
+terms, and F1 divided by parameter count is not a meaningful score. We
+therefore measure one concrete quantity, the share of the gap between the
+official LaBSE baseline and the best published system that a model closes,
+$G = (F1_{\text{ours}} - F1_{\text{base}})/(F1_{\text{best}} - F1_{\text{base}})$,
+reported separately for \DET{} (0.773 baseline, 0.825 best) and \TYPE{}
+(0.347, 0.532). The official English test labels are public and identical to
+our copy, so we will score on the same test set as the published results.
+The keep-rule variant and M4-core (frozen protocol) are retrained with
+checkpoints kept and each scored once on the test set, with and without the
+one text it shares with the training set. The development set is scored once as a sanity check and
+is not used to choose between models.
+\emph{Why it matters:} it places a small structured model in context
+against much larger systems without overclaiming.
 
 \paragraph{Deferred.}
 The TF-IDF, BERT and RoBERTa baselines and learned loss weighting
@@ -806,7 +807,7 @@ Oct~2--3 & Read the official Subtask~2 scorer and record whether later \TYPE{} s
 Oct~4--6 & Decoder extension: change threshold selection to all inner-validation texts (grid 0.05--0.80) and save inner-validation probabilities; rerun M4-core and M2 (25 runs each); matched operating-point comparison of M3 and M4-core. \\
 Oct~7--16 & RQ5: parent-to-child M5, soft and hard decoders (25 runs each); test H5a and H5b; apply the keep-rule. \\
 Oct~17--23 & RQ3: label-aware heads and a separate Other head on the kept variant; single- vs.\ multi-label analysis. \\
-Oct~24--27 & RQ4: kept variant (retrained with checkpoint) and frozen M4-core vs.\ published 12B--27B results; development set scored once. \\
+Oct~24--27 & RQ4 (secondary): retrain the kept variant and M4-core with checkpoints; score each once on the official test set; gap closure $G$ for \DET{} and \TYPE{}; development set scored once. \\
 Oct~28--31 & Error analysis of Other and neutral false alarms; final report and code release. \\
 \bottomrule
 \end{tabular}
@@ -818,9 +819,7 @@ every later row is a new experiment.}
 Table~\ref{tab:timeline} gives the plan. Each 25-run condition takes about
 one GPU-hour on our hardware, so the training budget is not a risk. The main
 risks are scientific: M5 may lose \DET{} recall through its gate and fail
-H5b, in which case RQ3 falls back to the decoder-extension M4-core; and if
-the test-label question stays open, RQ4 will say so and rely on the
-published numbers.
+H5b, in which case RQ3 falls back to the decoder-extension M4-core.
 
 % ===================================================================
 \section{Conclusion}
@@ -828,9 +827,8 @@ published numbers.
 Unconstrained models contradict the POLAR hierarchy on most texts. A
 noisy-OR model removes every contradiction but does not beat independent or
 multi-task models on our pre-declared metrics, and it ties with post-hoc
-gating, which itself removes almost a quarter of correct labels. We traced
-these outcomes to specific, testable causes, and the final stage tests them
-directly.
+gating, which itself removes almost a quarter of correct labels. These
+outcomes have specific, testable causes, which the final stage tests.
 
 % ===================================================================
 \section*{Limitations}
@@ -841,8 +839,9 @@ models, and M1 has twice the parameters of the others. Bootstrap intervals
 capture variation over texts; training variation is reflected only through
 five seeds, and only the six pre-declared tests are corrected for multiple
 comparisons. The decomposition and probability analyses were designed after
-seeing the main results. All results are English cross-validation scores
-from one consumer GPU, so they are not leaderboard-comparable.
+seeing the main results. All current results are English cross-validation
+scores from one consumer GPU, so they are not leaderboard-comparable; only
+RQ4 will score the official test set.
 
 \bibliography{custom}
 
