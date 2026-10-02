@@ -1,7 +1,7 @@
 % Mid-submission report -- Team Ugh (ACL format, final mode)
-% Overleaf: upload acl_latex.tex, custom.bib, acl.sty, acl_natbib.bst and the figures/ folder;
-% compile with pdfLaTeX. Tables are generated from the analysis outputs by
-% ANLP_Ugh/scripts/make_report_assets.py and inlined below.
+% Overleaf: upload acl_latex.tex, custom.bib, acl.sty, acl_natbib.bst and
+% figures/fig_primary_comparisons.pdf (keep it inside a folder named figures);
+% compile with pdfLaTeX. All numbers come from ANLP_Ugh/outputs/analysis/.
 \documentclass[11pt]{article}
 
 \usepackage[final]{acl}
@@ -15,13 +15,11 @@
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{multirow}
-\usepackage{float}
-\usepackage{adjustbox}
 \usepackage{amsmath}
 \usepackage{amssymb}
 \usepackage{xcolor}
 \usepackage{tikz}
-\usetikzlibrary{positioning,arrows.meta,fit,calc}
+\usetikzlibrary{positioning,arrows.meta,calc}
 
 \definecolor{cM1}{HTML}{2A78D6}
 \definecolor{cM2}{HTML}{EB6834}
@@ -31,13 +29,12 @@
 \newcommand{\DET}{\textsc{det}}
 \newcommand{\TYPE}{\textsc{type}}
 \newcommand{\LVR}{\mathrm{LVR}}
-\newcommand{\pos}{\mathcal{P}}
 
 \title{Structure over Scale: Hierarchy-Constrained Modeling for\\English Online Polarization Detection\\[0.3em]
-\large Mid-Submission Progress Report}
+\large Mid-Submission Report}
 
-\author{Durga Nebhrajani \and Rakshit Aggarwal \and Manav Beriwal \\
-  Team \textit{Ugh}, International Institute of Information Technology, Hyderabad \\
+\author{Team \textit{Ugh} \\
+  International Institute of Information Technology, Hyderabad \\
   \texttt{\{durga.nebhrajani, rakshitaggarwal.a, manav.beriwal\}@students.iiit.ac.in}}
 
 \begin{document}
@@ -45,176 +42,211 @@
 
 % ===================================================================
 \begin{abstract}
-In SemEval-2026 Task~9, a text is polarized exactly when at least one social
-dimension applies, yet shared-task systems predict the two subtasks
-separately and repair contradictions after decoding. We report the first
-stage of a controlled study of this hierarchy on English. Five conditions
-share one DeBERTa-v3-base encoder: independent models (M1), a multi-task model
-(M2), post-hoc gating of M2 (M3), and M4-core, which derives detection from the
-dimension probabilities through a differentiable noisy-OR. Over
-5~folds~$\times$~5~seeds (100 training runs), with paired bootstrap
-confidence intervals, the unconstrained models contradict the hierarchy on
-62\% of all texts, while M3 and M4-core reach zero violations. Under our
-pre-registered metrics M4-core does \emph{not} improve macro-F1 over M1 or M2
-(RQ1): \textsc{type} macro-F1 is $-$0.082 and $-$0.036 lower. At equal
-consistency it is statistically tied with gating (RQ2: $+$0.008, 95\% CI
-[$-$0.009, $+$0.022]), while recovering more labels on multi-label texts
-($+$0.025). A gating audit shows that M3 deletes 23\% of the multi-task
-model's correct dimension labels, because 98.7\% of its detection misses
-already carried a correct dimension. We trace M4-core's detection deficit to a
-decoding rule that tunes dimension thresholds without seeing non-polarized
-text, and show that the \textsc{type} ranking reverses when all texts are
-scored.
+In SemEval-2026 Task~9, a text is polarized exactly when at least one
+polarization type applies to it. Most shared-task systems still predict
+detection and type separately and repair contradictions afterwards. We study
+whether this hierarchy should be built into the model. On the English data,
+four conditions share one DeBERTa-v3-base encoder: independent models (M1),
+a multi-task model (M2), post-hoc gating of M2 (M3), and M4-core, which
+derives detection from the type probabilities with a differentiable noisy-OR.
+We ran 100 training runs (5 folds $\times$ 5 seeds) and compared models with
+paired bootstrap tests. Unconstrained models contradict the hierarchy on 62\%
+of texts; M3 and M4-core never do. M4-core does not improve the pre-declared
+metrics over M1 or M2 (RQ1), and it ties with post-hoc gating at equal
+consistency (RQ2). The analysis explains why. M4-core detects more polarized
+texts but its threshold calibration ignores neutral texts, so it raises false
+alarms. It also concentrates evidence in the dominant Political label and
+weakens rare labels. Gating, in turn, deletes 23\% of correct type labels.
+These findings shape the plan for the final submission.
 \end{abstract}
 
 % ===================================================================
 \section{Introduction}
 
-Polarized language carries hostility, stereotyping, exclusion, or divisive
-framing. The signals are contextual rather than lexical: political vocabulary
-alone does not make a text polarized, and one text can involve several social
-dimensions at once. SemEval-2026 Task~9 \citep{naseem-etal-2026-polar}
-splits the problem into \textsc{PolarDetect} (\DET{}: is the text polarized?)
-and \textsc{PolarType} (\TYPE{}: which of Political, Racial/ethnic,
-Religious, Gender/sexual identity, and Other apply?).
+Online polarization is language that divides people into opposing groups
+through hostility, stereotyping, or exclusion. Detecting it is hard because
+the signal is contextual: political words alone do not make a text
+polarized, and one text can attack several groups at once.
+SemEval-2026 Task~9 (POLAR) splits the problem into two related decisions
+\citep{naseem-etal-2026-semeval}. \textbf{\DET{}} (Subtask~1) asks whether a
+text is polarized. \textbf{\TYPE{}} (Subtask~2) asks which of five
+dimensions it targets: Political, Racial/ethnic, Religious, Gender/sexual
+identity, or Other.
 
-The two subtasks are \emph{nested}, not merely related. \TYPE{} labels exist
-only for polarized texts, so a text is polarized if and only if some dimension
-applies. Standard multi-task learning puts independent heads on a shared
-encoder, so nothing represents this constraint. \citet{yeze-2026} note that
-independent modelling ``causes hierarchical violations''.
-\citet{sagarmatha-2026} measure violation rates of up to 33\% and remove them
-with a deterministic rule at inference. They report that the rule ``slightly
-limits raw multi-label recall'': on English, gating lifts \DET{} from 0.752 to
-0.826 but lowers \TYPE{} from 0.511 to 0.506.
+The two decisions are \emph{nested}. Type labels exist only for polarized
+texts, so a text is polarized if and only if at least one type applies.
+Standard multi-task models ignore this. They put separate heads on a shared
+encoder, and nothing stops them from predicting ``not polarized'' together
+with a type, or ``polarized'' with no type. Shared-task teams noticed these
+contradictions \citep{guo-chang-2026-yeze} and fixed them with rules applied
+after prediction \citep{lin-etal-2026-nycu,maharjan-etal-2026-sagarmatha}.
+\citet{maharjan-etal-2026-sagarmatha} note that their hierarchical
+constraint ``slightly limits raw multi-label recall''.
 
-Every published fix acts on outputs. We ask whether the recall cost belongs
-to the constraint itself or to the point at which it is applied. Our
-structured model, M4-core, has no detection head. It computes the detection
-probability from the five dimension probabilities through a noisy-OR, so
-contradictory outputs cannot be represented. On non-polarized text, the
-detection loss reaches the dimension detectors, which is exactly where \TYPE{}
-supervision is missing.
-
-This report covers the mid-submission scope of the project. It addresses two
-contributions:
+Our project asks whether the hierarchy should instead be part of the model.
+Our structured model, M4-core, has no separate detection head: the
+probability that a text is polarized is computed from the five type
+probabilities, so contradictions cannot occur. This report covers the first
+stage of the project, which answers two questions:
 \begin{itemize}\setlength\itemsep{1pt}
-\item \textbf{C1 / RQ1.} Does deriving \DET{} from \TYPE{} via noisy-OR
-improve \DET{} and/or \TYPE{} macro-F1 over independent models (M1) and
-unconstrained multi-task learning (M2)?
-\item \textbf{C2 / RQ2.} At equal hard-prediction consistency, does
-training-time structure (M4-core) preserve more \TYPE{} recall and F1 than
-post-hoc deterministic reconciliation (M3)?
+\item \textbf{RQ1.} Does deriving \DET{} from \TYPE{} improve \DET{} and
+\TYPE{} macro-F1 over independent models and multi-task learning?
+\item \textbf{RQ2.} At equal consistency, does building the hierarchy into
+training keep more \TYPE{} recall than fixing outputs afterwards?
 \end{itemize}
-What remains is scheduled in \S\ref{sec:remaining}: a decoder extension
-that does not reopen these two questions, a parent-to-child model (RQ5),
-then the proposal's label-aware comparison (RQ3) and a parameter comparison
-that does not claim the leaderboard (RQ4).
 
-\paragraph{Summary of findings.}
-Unconstrained models violate the hierarchy on 62\% of texts, while M3 and
-M4-core reach 0\%. RQ1 is \emph{not supported}: M4-core is below both
-baselines. RQ2 is \emph{inconclusive}: M4-core ties with gating on macro
-metrics, but is better on multi-label texts and more stable across seeds. A
-gating audit quantifies the error propagation behind M3's recall loss. Two
-protocol choices shape the RQ1 outcome: \TYPE{} is scored only on polarized
-texts, and M4-core's thresholds are tuned without seeing non-polarized text.
-Both are documented here and are the first targets of the next stage.
+\paragraph{Progress summary.}
+We built a complete, tested pipeline and ran a controlled comparison: 100
+training runs plus 75 derived conditions, with paired statistics. The
+answers are clear but not the ones we expected. RQ1 is \emph{not
+supported}: M4-core is below both baselines on the pre-declared metrics.
+RQ2 is \emph{inconclusive}: M4-core and post-hoc gating tie. Our analysis
+traces both outcomes to specific, fixable causes and to a limit that any
+consistent model must face. These findings shape the remaining work: a decoder extension, a new
+parent-to-child model (RQ5), and the two research questions kept from our
+proposal (\S\ref{sec:future}). Our code is at
+\url{https://github.com/Rakshitagg06/ANLP_Ugh}, and all training runs are
+logged on Weights \& Biases (\S\ref{sec:setup}).
 
 % ===================================================================
-\section{Background and Related Work}
-\label{sec:related}
+\section{Problem Statement}
+\label{sec:problem}
+
+\paragraph{Task.}
+Each input is an English text $x$. The gold labels are a detection label
+$d \in \{0,1\}$ and a type vector $\mathbf{t} \in \{0,1\}^5$. The gold data
+satisfy the hierarchy exactly:
+\begin{equation}
+d = 1 \iff \textstyle\bigvee_{k=1}^{5} t_k = 1 .
+\label{eq:hier}
+\end{equation}
+A system outputs hard predictions $\hat d$ and $\hat{\mathbf t}$.
+
+\paragraph{Consistency.}
+A prediction is \emph{consistent} if it satisfies Eq.~\ref{eq:hier}. We
+measure violations with a symmetric version of the Logical Violation Rate
+(LVR). \citet{maharjan-etal-2026-sagarmatha} defined LVR for manifestations
+(Subtask~3) predicted on texts classified as non-polarized; we adapt it to
+the \DET{}/\TYPE{} pair and count both directions:
+\begin{equation}
+\LVR = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\big[\hat d_i \neq
+\textstyle\bigvee_k \hat t_{ik}\big],
+\end{equation}
+split into \textbf{LVR-A} ($\hat d=0$ but some $\hat t_k=1$) and
+\textbf{LVR-B} ($\hat d=1$ but every $\hat t_k=0$).
+
+\paragraph{Goal and research questions.}
+We want models that are accurate \emph{and} consistent. Before running any
+experiment, we fixed two hypotheses:
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{H1 (RQ1).} The structured model M4-core has higher \DET{}
+macro-F1 and higher \TYPE{} macro-F1 than both M1 and M2.
+\item \textbf{H2 (RQ2).} At equal consistency (LVR $=0$), M4-core has
+higher \TYPE{} macro-F1 and macro-recall than post-hoc gating (M3).
+\end{itemize}
+These six comparisons form one pre-declared test family.
+
+\paragraph{Scope.}
+This stage covers English Subtasks~1--2 and uses cross-validation on the
+official training set. Label-aware representations and the comparison with
+very large models, both planned in our proposal, move to the final stage.
+
+% ===================================================================
+\section{Literature Review}
+\label{sec:lit}
 
 \paragraph{The POLAR benchmark.}
-SemEval-2026 Task~9 covers 22 languages and attracted 67 teams and 73 system
-papers \citep{naseem-etal-2026-polar}. Two properties of the English data
-shaped our design. First, annotator agreement is only fair (Fleiss's
-$\kappa=0.39$, against 0.83 for Khmer), so part of the label signal is
-genuinely contested. Second, headroom differs sharply between subtasks. The
-best English \DET{} score is 0.825 against a 0.773 baseline, whereas \TYPE{}
-reaches 0.532 against 0.347. Detection is close to saturated; dimension
-classification is not.
+SemEval-2026 Task~9 covers 22 languages and received submissions from 67
+teams, with 69 system papers \citep{naseem-etal-2026-semeval}. The English
+data have 3{,}222 training, 160 development and 1{,}452 test texts. Two facts
+from the task paper shaped our design. First, English annotator agreement
+is only moderate (Fleiss' $\kappa = 0.39$), so some labels are genuinely
+debatable. Second, the headroom differs between subtasks. The best English
+\DET{} score is 0.825 against a baseline of 0.773, while the best \TYPE{}
+score is 0.532 against 0.347. Detection is close to saturated; type
+classification is where improvement is most needed.
 
-\paragraph{POLAR systems.}
-Large generative models dominated the task: Qwen was used by 31\% of teams,
-LLaMA by 20\%, and Gemma/Gemini by 19\%, against about 7\% for BERT-style
-encoders. Both English subtask winners have 12B--27B parameters
-\citep{naseem-etal-2026-polar,utokyo-2026,nycu-2026}. Among encoder systems,
-\citet{daniyal-etal-2026-msqrd} compare BERT variants, \citet{tran-2026-uit}
-add an LLM refinement stage to DeBERTa, \citet{orsanigo-etal-2026-digis}
-report multi-task gains, and \citet{nestor-etal-2026-polarizedteam} use
-label-wise attention. Our protocol follows \citet{smash-2026}:
-cross-validation with out-of-fold threshold calibration.
+\paragraph{How teams solved the task.}
+Large generative models dominated: the Qwen family was used by 31\% of
+systems, LLaMA by 20\%, Gemma/Gemini by 19\%, and BERT-style encoders by
+only 7\% \citep{naseem-etal-2026-semeval}. The best English systems
+fine-tuned 12B--27B models
+\citep{tangkulung-tsuruoka-2026-utokyo,lin-etal-2026-nycu}.
+\citet{tangkulung-tsuruoka-2026-utokyo} predict all labels in a single
+forward pass, which they report reduces error propagation compared with
+multi-step decoding. Encoder systems remain competitive.
+\citet{daniyal-etal-2026-msqrd} fine-tune BERT-based models, and
+\citet{tran-2026-uit} use DeBERTa as a high-recall filter before an LLM
+assigns fine-grained labels. \citet{bokaei-etal-2026-smash} combine encoder
+ensembles with thresholds tuned on out-of-fold predictions.
+\citet{orsanigo-etal-2026-digis} use multi-task learning across the
+subtasks, and \citet{nestor-etal-2026-polarizedteam} add label-wise
+attention. This literature shows that a 184M-parameter encoder is a
+reasonable base for a controlled study, even if it is not the strongest
+system.
 
-\paragraph{Hierarchy and consistency.}
-Almost every team tunes per-label thresholds \citep{naseem-etal-2026-polar},
-so we treat that as standard practice. \citet{yeze-2026} observe
-violations but leave their measurement and correction to future work.
-\citet{nycu-2026} check the \DET{} prediction before assigning \TYPE{} labels.
-\citet{polafusion-2026} route inputs through a binary gatekeeper that zeroes
-child labels for non-polarized text, and force an argmax when a polarized
-text fires nothing. \citet{sagarmatha-2026} formalise the Logical Violation
-Rate (LVR), audit it across all languages, enforce
-$\hat{y}_{\text{S1}}=0 \Rightarrow \hat{y}_{\text{S2}}=0$ at inference, and
-feed the child task \emph{detached} parent logits. That stop-gradient
-deliberately prevents the tasks from shaping each other's representations.
+\paragraph{The hierarchy in POLAR systems.}
+Several teams met the hierarchy, each with a different fix.
+\citet{guo-chang-2026-yeze} train the subtasks separately, observe that
+independent modelling ``causes hierarchical violations'', and suggest
+post-hoc gating or hierarchical calibration as future work.
+\citet{lin-etal-2026-nycu} repair one direction with a rule: if a text is
+predicted polarized but no type is predicted, they assign the Other label.
+\citet{mohammad-2026-polafusion} use a binary gatekeeper in front of
+specialist classifiers trained only on polarized content.
+\citet{djamai-etal-2026-namaa} use their Subtask~1 encoder as a hard filter
+before type classification for Arabic. \citet{iannielli-etal-2026-minds}
+introduce a two-stage cascade to reduce false positives under class
+imbalance. The most explicit treatment is by
+\citet{maharjan-etal-2026-sagarmatha}. They feed detached (stop-gradient)
+Subtask~1 and~2 predictions to the manifestation head, enforce
+$\hat y_{S1}=0 \Rightarrow \hat y_{S2}=0, \hat y_{S3}=0$ at inference, and
+report violation rates as high as 33\% for their ensemble. On English, their
+hierarchical variant scores 0.826 on \DET{} and 0.506 on \TYPE{}, against
+0.752 and 0.511 for their non-hierarchical variant. In every one of these
+systems the hierarchy acts \emph{after} prediction, or between separately
+trained stages.
 
-\paragraph{The gap.}
-In every system, the constraint acts on outputs: detection remains an
-independent prediction that is overruled later. We found no Task~9 system in
-which detection is parameterised as a function of the dimension
-predictions. Hierarchy-consistent neural classifiers are established in
-structured prediction \citep{giunchiglia2020}, multi-task learning has a long
-history \citep{caruana1997,kendall2018}, and label-wise attention goes back to
-\citet{mullenbach2018}. None of these ideas has been applied to POLAR.
+\paragraph{Multi-task learning.}
+Sharing an encoder between related tasks can help both
+\citep{caruana1997}, and the loss weights can be learned
+\citep{kendall2018}. Sharing can also hurt: \citet{guo-chang-2026-yeze}
+report negative transfer when sparse fine-grained labels share a model with
+detection. \citet{le-phung-2026-alphalyrae} found that initialising the
+type model from detection weights barely changed the result on Chinese
+(0.8312 with it, 0.8316 without). Sharing parameters alone does not appear to transfer the
+hierarchy.
 
-% ===================================================================
-\section{Task and Data}
-\label{sec:data}
+\paragraph{Hierarchies and logical constraints.}
+Outside POLAR, hierarchical classification is well studied.
+\citet{silla2011survey} survey the field and describe how top-down systems
+propagate an error at a parent node to all its children, which is exactly
+the risk of post-hoc gating. \citet{giunchiglia2020} build hierarchy
+consistency into the network and its loss rather than repairing outputs.
+\citet{xu2018semantic} derive a training loss from logical constraints, and
+\citet{giunchiglia2022survey} survey where constraints can be placed: in the
+architecture, in the loss, or at inference. Our M4-core uses a noisy-OR, a
+classic model of several independent causes producing one effect
+\citep{pearl1988}. Label-wise attention for multi-label text classification
+goes back to \citet{mullenbach-etal-2018-explainable}.
 
-\begin{table}[t]
-\centering\small
-\begin{tabular}{@{}lr@{}}
-\toprule
-Statistic (English training split) & Value \\
-\midrule
-Texts & 3{,}222 \\
-\quad polarized (\DET{}$=1$) / non-polarized & 1{,}175 / 2{,}047 \\
-\TYPE{} support: Political & 1{,}150 \\
-\quad Racial/ethnic / Religious & 281 / 112 \\
-\quad Gender/sexual / Other & 72 / 126 \\
-Polarized texts with $\geq$2 / exactly 1 \TYPE{} & 426 / 749 \\
-\quad \textit{Other} co-occurring with a named label & 121 \\
-Hierarchy violations in gold labels & 0 \\
-\bottomrule
-\end{tabular}
-\caption{The English training split, on which every result in this report is
-computed (out-of-fold). Political appears in 98\% of polarized texts, so it is
-almost a proxy for \DET{}. Gender/sexual and Religious are the rare labels.}
-\label{tab:data}
-\end{table}
+\paragraph{Thresholds and evaluation.}
+Most POLAR systems tuned per-label thresholds
+\citep{naseem-etal-2026-semeval}, and the F1-optimal threshold of a
+classifier depends on its calibration \citep{lipton2014thresholding}. We
+therefore treat threshold tuning as part of each model, using the same
+search for all models. For statistics we follow the paired bootstrap of
+\citet{koehn-2004-statistical}, correct for multiple tests with
+\citet{holm1979}, and build folds with multi-label stratification
+\citep{sechidis2011}.
 
-\paragraph{Inputs and outputs.}
-The input is one social-media text, tokenised with the DeBERTa-v3 tokenizer
-and truncated to 256 tokens. Every model outputs a \DET{} decision
-$\hat{d}\in\{0,1\}$ and five \TYPE{} decisions
-$\hat{\mathbf{t}}\in\{0,1\}^5$, together with the underlying probabilities.
-
-\paragraph{Data.}
-We use the official English data: 3{,}222 training, 160 development and
-1{,}452 test texts \citep{naseem-etal-2026-polar}. Table~\ref{tab:data}
-summarises the training split. The gold labels satisfy the hierarchy exactly
-in all three files. \textit{Other} co-occurs with named dimensions in 121
-training texts, so we model it as an ordinary fifth label rather than an
-exclusive residual. The supplied test file contains the same label columns. We used them only
-to check the hierarchy (533 polarized, 919 non-polarized, zero violations).
-Their provenance relative to the official Codabench release is unconfirmed,
-so no model is trained or scored on them. One training text is repeated in
-the test file under a different id. It does not affect this
-cross-validation, and it will be excluded from any later test score. The 160-text development set has single-digit
-positive counts for the rare dimensions, so it cannot support ablation claims
-\citep{smash-2026}. All conclusions therefore rest on out-of-fold predictions
-over the 3{,}222 training texts.
+\paragraph{Gap and viability.}
+No POLAR system makes the detection decision a \emph{function} of the type
+predictions, and none compares post-hoc and training-time consistency under
+one controlled setup. That is the gap we address. The study is viable: the
+gold data satisfy the hierarchy exactly, the encoder is small enough to run
+100 training runs in 3.9 GPU-hours (\S\ref{sec:setup}), and the shared-task
+literature supplies the baselines and metrics we need.
 
 % ===================================================================
 \section{Models}
@@ -232,7 +264,6 @@ over the 3{,}222 training texts.
   arr/.style={-{Stealth[length=1.6mm]}, thin},
   lbl/.style={font=\footnotesize\bfseries, anchor=east}
 ]
-% M1
 \node[lbl, text=cM1] (l1) at (0,0) {M1};
 \node[enc, right=2mm of l1, yshift=2.8mm] (e1a) {Encoder$_1$};
 \node[head, right=of e1a] (h1a) {\DET{} head};
@@ -242,7 +273,6 @@ over the 3{,}222 training texts.
 \node[res, right=of h1b] (o1b) {$p_1..p_5$};
 \draw[arr] (e1a)--(h1a); \draw[arr] (h1a)--(o1a);
 \draw[arr] (e1b)--(h1b); \draw[arr] (h1b)--(o1b);
-% M2 / M3
 \node[lbl, text=cM2] (l2) at (0,-13mm) {M2};
 \node[enc, right=2mm of l2] (e2) {Encoder};
 \node[head, right=of e2, yshift=2.8mm] (h2a) {\DET{} head};
@@ -254,7 +284,6 @@ over the 3{,}222 training texts.
 \node[box, draw=cM3, thick, right=4mm of $(o2a)!0.5!(o2b)$, text width=19mm] (g)
   {\textbf{M3} gate:\\ $\hat{\mathbf t}\!\leftarrow\!\hat{\mathbf t}\wedge\hat d$\\ $\hat d\!\leftarrow\!\mathrm{OR}(\hat{\mathbf t})$};
 \draw[arr] (o2a)--(g); \draw[arr] (o2b)--(g);
-% M4
 \node[lbl, text=cM4] (l4) at (0,-26mm) {M4};
 \node[enc, right=2mm of l4] (e4) {Encoder};
 \node[head, right=of e4] (h4) {\TYPE{} head};
@@ -263,131 +292,115 @@ over the 3{,}222 training texts.
 \node[res, right=2mm of n4] (d4) {$p_{\text{det}}$};
 \draw[arr] (e4)--(h4); \draw[arr] (h4)--(o4); \draw[arr] (o4)--(n4); \draw[arr] (n4)--(d4);
 \end{tikzpicture}}
-\caption{The four conditions. All share DeBERTa-v3-base, mean pooling and
-linear heads. M1 trains two separate encoders. M2 shares one encoder between
-an unconstrained \DET{} head and \TYPE{} head. M3 is not trained: it rewrites
-M2's hard predictions after decoding. M4-core has no \DET{} head; detection is
-a deterministic function of the five dimension probabilities, so the
-hierarchy holds by construction and the \DET{} loss trains the \TYPE{}
-head.}
+\caption{The four conditions. All use DeBERTa-v3-base with mean pooling and
+linear heads. M3 is not trained: it rewrites M2's predictions. M4-core has
+no \DET{} head; detection is computed from the type probabilities, so the
+hierarchy always holds.}
 \label{fig:models}
 \end{figure}
 
-All conditions share \textbf{DeBERTa-v3-base} \citep{he2023debertav3}, which
-has 184M parameters including embeddings. Each uses the attention-masked mean
-of the final hidden states, dropout 0.1 and linear heads
-(Figure~\ref{fig:models}). Let $z_k$ be the logit of dimension $k$,
-$p_k=\sigma(z_k)$, and $\pos$ the gold-polarized examples in a batch. The
-\TYPE{} loss is masked to $\pos$ in every trained model, because \TYPE{}
-labels are undefined elsewhere \citep{polafusion-2026}. It uses per-label
-positive weights $w_k=\#\text{neg}_k/\#\text{pos}_k$, computed within $\pos$.
+All models use DeBERTa-v3-base \citep{he2023debertav3} (184M parameters),
+mean pooling over tokens, dropout 0.1 and linear heads
+(Figure~\ref{fig:models}). Let $p_k$ be the predicted probability of type
+$k$. Type labels are undefined for non-polarized texts, so the \TYPE{} loss
+is a weighted binary cross-entropy (BCE) computed only on gold-polarized
+texts, with per-label positive weights.
 
 \paragraph{M1 (independent).}
-Two separately fine-tuned encoders, as in \citet{yeze-2026}: M1-\DET{} with
-binary cross-entropy (BCE), and M1-\TYPE{} with masked weighted BCE. Their
-predictions are joined without reconciliation. M1 has twice the parameters
-(368M).
+Two separately trained encoders, one for \DET{} and one for \TYPE{}, as in
+\citet{guo-chang-2026-yeze}. Their outputs are joined without any
+consistency rule. M1 has 368M parameters.
 
 \paragraph{M2 (shared multi-task).}
-One encoder with a \DET{} head and a \TYPE{} head:
-\begin{equation}
-\mathcal{L} = \mathrm{BCE}(y_{\text{det}}, p_{\text{det}}) + \lambda \cdot
-\frac{1}{|\pos|}\sum_{i\in\pos}\mathcal{L}^{(i)}_{\text{type}},
-\label{eq:loss}
-\end{equation}
-with $\lambda=1$. Nothing ties the heads together, so M2 can violate the
-hierarchy in either direction.
+One encoder with a \DET{} head and a \TYPE{} head, trained with
+$\mathcal L = \mathrm{BCE}_{\text{det}} + \lambda\,\mathcal L_{\text{type}}$
+and $\lambda=1$. Nothing links the two heads.
 
-\paragraph{M3 (post-hoc reconciliation).}
-M3 is derived from M2's thresholded predictions $\hat d$, $\hat t_k$, reusing
-M2's frozen thresholds. This is our re-implementation of the deterministic
-constraint of \citet{sagarmatha-2026}. The \emph{one-way} variant sets
-$\hat t_k \leftarrow \hat t_k \wedge \hat d$, which removes
-non-polarized-with-type violations only. The \emph{symmetric} variant then
-sets $\hat d \leftarrow \bigvee_k \hat t_k$, which also removes
-polarized-without-type violations, so $\LVR=0$ is guaranteed. We keep the raw
-and reconciled predictions to audit what gating removes.
+\paragraph{M3 (post-hoc gating).}
+M3 is derived from M2's predictions and reuses M2's thresholds. It applies
+the inference rule of \citet{maharjan-etal-2026-sagarmatha} to the type
+labels: if $\hat d = 0$, all types are set to 0 (\emph{one-way}). The
+\emph{symmetric} variant then sets $\hat d \leftarrow \bigvee_k \hat t_k$,
+which guarantees $\LVR = 0$.
 
-\paragraph{M4-core (structured noisy-OR).}
-The same encoder and \TYPE{} head as M2, with \emph{no} \DET{} head:
+\paragraph{M4-core (noisy-OR).}
+The same encoder and \TYPE{} head as M2, but no \DET{} head. Detection is
 \begin{equation}
-p_{\text{det}} = 1-\prod_{k=1}^{5}(1-p_k),
+p_{\text{det}} = 1-\textstyle\prod_{k=1}^{5}(1-p_k),
 \label{eq:noisyor}
 \end{equation}
-trained with the loss of Eq.~\ref{eq:loss}. We compute Eq.~\ref{eq:noisyor} in
-log space: with $s=\sum_k \mathrm{softplus}(z_k)$, the logit is
-$\log(e^{s}-1)$, evaluated with two numerically stable branches. On a
-non-polarized text the \DET{} loss pushes \emph{every} $z_k$ down, which gives
-the dimension detectors supervision exactly where masking removes it. At
-inference, $\hat t_k = \mathbf{1}[p_k \ge \tau_k]$ and
-$\hat d = \bigvee_k \hat t_k$, so binary $\LVR=0$ holds by construction.
-M4-core omits the label-aware attention of our proposal on purpose. The
-mid-submission comparison changes one mechanism at a time, so any M3-versus-M4
-difference can be attributed to the hierarchy rather than to the head
-architecture.
+the probability that at least one type applies, computed in log space for
+numerical stability. It is trained with the same loss as M2. On a
+non-polarized text the \DET{} loss pushes \emph{every} type probability
+down, which supervises the type head exactly where the \TYPE{} loss is
+masked. At inference, $\hat t_k = \mathbf 1[p_k \ge \tau_k]$ and
+$\hat d = \bigvee_k \hat t_k$, so $\LVR = 0$ by construction. The word
+``core'' marks that it keeps M2's head design, so M3 and M4-core differ only
+in where the hierarchy is enforced.
 
 % ===================================================================
-\section{Experimental Protocol}
-\label{sec:protocol}
+\section{Experimental Setup}
+\label{sec:setup}
 
-\paragraph{Cross-validation.}
-We create one fixed five-fold split with iterative multilabel stratification
-over \DET{} and the five \TYPE{} labels \citep{sechidis2011}, using seed 2026.
-The folds hold 644--645 texts each, with rare labels balanced (14--15 Gender,
-22--23 Religious per fold). The split is reused for every model and every
-seed (13, 21, 42, 87, 100). Within each outer split, 10\% of the four
-training folds (258 texts) forms an inner validation set, stratified the same
-way. Early stopping, checkpoint selection and all thresholds use only this
-inner set. The outer fold is predicted exactly once, with the selected state
-and thresholds frozen. This yields 4 trained conditions $\times$ 5 folds
-$\times$ 5 seeds $=$ \textbf{100 training runs}. M1 is joined, and both M3
-variants are derived, for all 25 fold--seed pairs.
+\paragraph{Data.}
+All results use out-of-fold predictions on the 3{,}222 English training
+texts: 1{,}175 polarized and 2{,}047 not. Type support is Political 1{,}150,
+Racial/ethnic 281, Religious 112, Gender/sexual 72 and Other 126. Among the
+polarized texts, 426 have two or more types. Political appears in 98\% of
+polarized texts, so it behaves almost like a copy of \DET{}. The gold labels
+satisfy Eq.~\ref{eq:hier} with no exceptions. The supplied test file also
+contains labels. We used them only to check the hierarchy (533 polarized,
+919 not, no violations); because their provenance relative to the official
+release is unconfirmed, no model is trained or scored on them. One training
+text also appears in the test file under a different id; it does not affect
+our cross-validation. The 160-text development set is too small to compare
+rare labels and was not used.
 
-\paragraph{Training.}
-AdamW \citep{loshchilov2019}, learning rate $2\times10^{-5}$, weight decay
-0.01, batch size 8 with 2 accumulation steps, linear schedule with 10\%
-warm-up, gradient clipping at 1.0, FP16 mixed precision, at most 8 epochs,
-early-stopping patience 2. The checkpoint is selected on inner \DET{}
-macro-F1 for M1-\DET{} and on inner \TYPE{} macro-F1 otherwise.
+\paragraph{Protocol.}
+We use one fixed five-fold split, stratified over all six labels
+\citep{sechidis2011}, and five seeds (13, 21, 42, 87, 100), giving
+4 trained conditions $\times$ 5 folds $\times$ 5 seeds $=$ 100 training
+runs. In each run, 10\% of the training folds form an inner validation set.
+Early stopping, the best epoch and all thresholds are chosen there; the
+held-out fold is predicted once. Training uses AdamW
+\citep{loshchilov2019} with learning rate $2\times10^{-5}$, weight decay
+0.01, 10\% warm-up, effective batch size 16 and FP16, for at most 8 epochs
+with patience 2. Texts are truncated to 256 tokens.
 
 \paragraph{Thresholds.}
-All thresholds are searched over $\{0.20,0.25,\dots,0.80\}$. Each \TYPE{}
-threshold $\tau_k$ maximises that label's F1 on the inner-validation polarized
-texts. M1-\DET{} and M2 select a \DET{} threshold that maximises \DET{}
-macro-F1. M3 inherits M2's thresholds, and M4-core has no \DET{} threshold
-(Eq.~\ref{eq:noisyor} plus OR decoding).
+Each type threshold $\tau_k$ is chosen from $\{0.20, 0.25, \dots, 0.80\}$
+to maximize that label's F1 on the inner-validation polarized texts. M1 and
+M2 also choose a \DET{} threshold for \DET{} macro-F1. M4-core has no
+\DET{} threshold.
 
 \paragraph{Metrics.}
-\DET{} macro-F1 averages F1 over both classes. \TYPE{} macro-P/R/F1 average
-over the five labels and, as frozen in our plan, are computed on
-\emph{gold-polarized} texts. We additionally report \TYPE{} on \emph{all}
-texts as a pre-declared secondary view (\S\ref{sec:scope}). The symmetric
-Logical Violation Rate, extended from \citet{sagarmatha-2026} to both
-directions, is
-\begin{equation}
-\LVR = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\big[\hat d^{(i)} \neq
-\textstyle\bigvee_k \hat t^{(i)}_k\big],
-\end{equation}
-split into LVR-A ($\hat d=0$ with some $\hat t_k=1$) and LVR-B ($\hat d=1$
-with no $\hat t_k=1$). We also report label-level recall on multi-label and
-single-label polarized texts.
+\DET{} macro-F1 averages the F1 of both classes. \TYPE{} macro-F1,
+precision and recall average over the five labels and, as fixed before the
+experiments, are computed on \emph{gold-polarized texts} only. We also
+report \TYPE{} on \emph{all} texts, where a type predicted for a
+non-polarized text counts as a false positive.
 
-\paragraph{Aggregation and statistics.}
-For each seed, the five outer folds are concatenated into one 3{,}222-text
-prediction set and scored once. Tables show the mean $\pm$ standard deviation
-of the five seed-level scores; we never treat the 25 fold--seed scores as
-independent. Paired comparisons use an example-level paired bootstrap
-\citep{koehn2004} with 2{,}000 resamples. Each resample applies the same
-multiset of texts to both models and all five seeds. The per-seed difference
-is averaged over seeds, and the 2.5/97.5 percentiles form the 95\% CI. The
-six pre-declared primary tests (Table~\ref{tab:primary}) are Holm-corrected
-\citep{holm1979}. We also report how many of the five seeds favour each
-model. Secondary comparisons are exploratory and uncorrected.
+\paragraph{Statistics.}
+For each seed, the five held-out folds form one prediction set over all
+3{,}222 texts. We report the mean $\pm$ standard deviation over the five
+seeds. For comparisons we use a paired bootstrap over texts (2{,}000
+resamples, \citealp{koehn-2004-statistical}): each resample applies the
+same texts to both models and all seeds. The six pre-declared tests are
+Holm-corrected \citep{holm1979}. All other comparisons are exploratory.
 
 \paragraph{Compute.}
-All 100 runs ran on one NVIDIA RTX 4060 Laptop GPU (8\,GB; peak memory
-4.5\,GB) with PyTorch 2.5.1 and Transformers 4.57.6. Each run took 1.9--2.9
-minutes, 3.9 GPU-hours in total (Appendix~\ref{app:training}).
+All runs used one NVIDIA RTX 4060 laptop GPU. A run takes 2--3 minutes, and
+the full sweep took 3.9 GPU-hours.
+
+\paragraph{Code and experiment logs.}
+The code, configurations, saved analysis outputs and this report are
+available at:
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{Code (GitHub):}\\ \url{https://github.com/Rakshitagg06/ANLP_Ugh}
+\item \textbf{Weights \& Biases:}\\ \url{https://wandb.ai/rakshitagg06-iiit-hyderabad/anlp-project}
+\end{itemize}
+The W\&B project contains all 100 training runs, with their loss curves,
+configurations, and saved predictions and metrics.
 
 % ===================================================================
 \section{Results}
@@ -395,722 +408,431 @@ minutes, 3.9 GPU-hours in total (Appendix~\ref{app:training}).
 
 \begin{table*}[t]
 \centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}lrcccccc@{}}
+\begin{tabular}{@{}lrccccccc@{}}
 \toprule
-& & \multicolumn{1}{c}{\textbf{DET}} & \multicolumn{3}{c}{\textbf{TYPE} (gold-polarized texts)} & \multicolumn{2}{c}{\textbf{LVR} (\%)} \\
-\cmidrule(lr){3-3}\cmidrule(lr){4-6}\cmidrule(l){7-8}
-Model & Params & macro-F1 & macro-F1 & macro-P & macro-R & A & total \\
+& & \textbf{DET} & \multicolumn{3}{c}{\textbf{TYPE}, gold-polarized texts} & \textbf{TYPE}, all texts & \multicolumn{2}{c}{\textbf{LVR} (\%)} \\
+\cmidrule(lr){3-3}\cmidrule(lr){4-6}\cmidrule(lr){7-7}\cmidrule(l){8-9}
+Model & Params & macro-F1 & macro-F1 & macro-P & macro-R & macro-F1 & A & B \\
 \midrule
-M1 (independent) & 368M & \textbf{0.799\,{\scriptsize$\pm$0.007}} & \textbf{0.543\,{\scriptsize$\pm$0.013}} & \textbf{0.509\,{\scriptsize$\pm$0.024}} & \textbf{0.600\,{\scriptsize$\pm$0.023}} & 61.9 & 61.9 \\
-M2 (shared MTL) & 184M & 0.793\,{\scriptsize$\pm$0.003} & 0.497\,{\scriptsize$\pm$0.015} & 0.444\,{\scriptsize$\pm$0.018} & 0.595\,{\scriptsize$\pm$0.019} & 61.5 & 61.6 \\
-\addlinespace[1pt]
-M3 one-way & 184M & 0.793\,{\scriptsize$\pm$0.003} & 0.453\,{\scriptsize$\pm$0.022} & 0.469\,{\scriptsize$\pm$0.033} & 0.468\,{\scriptsize$\pm$0.036} & 0.0 & 0.0 \\
-M3 symmetric & 184M & 0.793\,{\scriptsize$\pm$0.003} & 0.453\,{\scriptsize$\pm$0.022} & 0.469\,{\scriptsize$\pm$0.033} & 0.468\,{\scriptsize$\pm$0.036} & 0.0 & 0.0 \\
-M4-core (noisy-OR) & 184M & 0.784\,{\scriptsize$\pm$0.004} & 0.461\,{\scriptsize$\pm$0.007} & 0.465\,{\scriptsize$\pm$0.011} & 0.474\,{\scriptsize$\pm$0.022} & 0.0 & 0.0 \\
+M1 (independent)   & 368M & \textbf{0.799}\,{\scriptsize$\pm$.007} & \textbf{0.543}\,{\scriptsize$\pm$.013} & \textbf{0.509}\,{\scriptsize$\pm$.024} & \textbf{0.600}\,{\scriptsize$\pm$.023} & 0.299\,{\scriptsize$\pm$.013} & 61.9 & 0.0 \\
+M2 (shared MTL)    & 184M & 0.793\,{\scriptsize$\pm$.003} & 0.497\,{\scriptsize$\pm$.015} & 0.444\,{\scriptsize$\pm$.018} & 0.595\,{\scriptsize$\pm$.019} & 0.255\,{\scriptsize$\pm$.029} & 61.5 & 0.0 \\
+M3 (gating)        & 184M & 0.793\,{\scriptsize$\pm$.003} & 0.453\,{\scriptsize$\pm$.022} & 0.469\,{\scriptsize$\pm$.033} & 0.468\,{\scriptsize$\pm$.036} & 0.382\,{\scriptsize$\pm$.017} & 0.0 & 0.0 \\
+M4-core (noisy-OR) & 184M & 0.784\,{\scriptsize$\pm$.004} & 0.461\,{\scriptsize$\pm$.007} & 0.465\,{\scriptsize$\pm$.011} & 0.474\,{\scriptsize$\pm$.022} & \textbf{0.396}\,{\scriptsize$\pm$.008} & 0.0 & 0.0 \\
 \bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{Main results} (out-of-fold over 3{,}222 texts; mean $\pm$
-sd over 5 seeds; best value per column in bold). \TYPE{} is scored on
-gold-polarized texts, as frozen in the plan. LVR-B is 0.0\% for all models:
-M3 one-way retains 0.4 violating texts per seed, and M2 essentially never
-predicts \DET{}$=1$ without any \TYPE{}. M3's two variants therefore have
-identical \TYPE{} predictions and practically identical \DET{}.}
+\end{tabular}
+\caption{\textbf{Main results} (out-of-fold over 3{,}222 texts; mean $\pm$ sd
+over five seeds; best in bold). M3 is the symmetric variant; the one-way
+variant has identical \TYPE{} predictions and differs on \DET{} for only two
+texts in one seed. LVR-A: ``not polarized'' but a type is predicted. LVR-B:
+``polarized'' but no type is predicted.}
 \label{tab:main}
 \end{table*}
 
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_main_metrics.pdf}
-\caption{\textbf{Primary metrics by model.} Bars show the mean of the five
-seed-level out-of-fold scores, with whiskers for $\pm$1 sd. Read each panel
-from top to bottom as the model ladder: independent (M1), shared (M2), gated
-(M3) and structured (M4). \DET{} is almost flat (0.784--0.799). On \TYPE{},
-the two consistent models (M3, M4) sit together, well below the two
-inconsistent ones (M1, M2), and the gap comes almost entirely from recall
-(right panel).}
-\label{fig:main}
-\end{figure*}
+Table~\ref{tab:main} gives the overall picture. M1 is the strongest model on
+every pre-declared metric. The two consistent models, M3 and M4-core, have
+lower \TYPE{} scores on gold-polarized texts, and the gap comes from recall
+(about 0.47 vs.\ 0.60), not precision.
 
-Table~\ref{tab:main} and Figure~\ref{fig:main} give the overall picture.
-M1 is the strongest model on every primary metric, with M2 close behind on
-\DET{}. The two consistent models, M3 and M4-core, are 0.04--0.09 \TYPE{}
-macro-F1 below the inconsistent ones. The difference is driven by recall
-(0.47 vs.\ 0.60), not precision (0.47 vs.\ 0.44--0.51). M4-core has the
-smallest seed variance on \TYPE{} (sd 0.007, against 0.013--0.022).
+\subsection{Consistency}
+The unconstrained models contradict the hierarchy on \textbf{62\%} of all
+texts, almost entirely as LVR-A. M2 predicts at least one type for every one
+of the 2{,}047 non-polarized texts, and M1 for 2{,}039 of them. The reason
+is how their type heads are trained. The \TYPE{} loss never sees a
+non-polarized text, positive weights push type probabilities up, and the
+thresholds are tuned only on polarized texts. Nothing teaches these heads to
+stay silent. M3 and M4-core have zero violations in every run.
 
-\subsection{Hierarchy consistency}
-\label{sec:lvr}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/fig_lvr.pdf}
-\caption{\textbf{Hierarchy violations.} Each bar is the share of all 3{,}222
-texts whose hard predictions contradict the hierarchy, averaged over seeds.
-Purple is LVR-A (``not polarized'' with a dimension); green is LVR-B
-(``polarized'' with no dimension). M1 and M2 contradict themselves on 62\% of
-texts, almost entirely in direction A. M3 and M4-core never do.}
-\label{fig:lvr}
-\end{figure}
-
-Figure~\ref{fig:lvr} shows that the unconstrained models violate the
-hierarchy on \textbf{61.9\%} (M1) and \textbf{61.6\%} (M2) of all texts,
-nearly twice the highest rate \citet{sagarmatha-2026} report. Almost all of
-it is LVR-A. M2 attaches a dimension to every one of the 2{,}047
-non-polarized texts, and M1 to 2{,}039 of them (Table~\ref{tab:det}).
-
-This is a direct consequence of how the \TYPE{} heads are trained. The masked
-loss means they never see a non-polarized text, the positive weights push
-their probabilities up, and their thresholds are tuned only on polarized
-texts. Nothing teaches them what non-polarized text looks like.
-
-M3 (both variants) and M4-core reach exactly 0\% in every run. That confirms
-the invariants of \S\ref{sec:models}: symmetric M3 and M4-core have
-$\LVR=0$, and one-way M3 has LVR-A $=0$. The interesting question is
-therefore not whether consistency is reached, but what it costs, which is
-RQ2.
-
-\subsection{RQ1: noisy-OR versus M1 and M2}
+\subsection{RQ1: Does noisy-OR beat M1 and M2?}
 \label{sec:rq1}
 
-\begin{table*}[t]
+\begin{table}[t]
 \centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}llcccccc@{}}
+\setlength{\tabcolsep}{2.5pt}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}llccc@{}}
 \toprule
-RQ & Comparison \& metric & A & B & $\Delta$ (A$-$B) & 95\% CI & $p_{\text{Holm}}$ & Seeds \\
+& Comparison & $\Delta$ & 95\% CI & $p_{\text{Holm}}$ \\
 \midrule
-RQ1 & M4$-$M1: DET macro-F1 & 0.784 & 0.799 & $-$0.014 & [$-$0.023, $-$0.006] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M1: TYPE macro-F1 & 0.461 & 0.543 & $-$0.082 & [$-$0.102, $-$0.064] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M2: DET macro-F1 & 0.784 & 0.793 & $-$0.008 & [$-$0.016, $-$0.001] & 0.072 & 0/5 \\
-RQ1 & M4$-$M2: TYPE macro-F1 & 0.461 & 0.497 & $-$0.036 & [$-$0.055, $-$0.019] & 0.004 & 0/5 \\
+\multirow{4}{*}{RQ1} & M4$-$M1 \DET{} F1 & $-$0.014 & [$-$0.023, $-$0.006] & $<$0.001 \\
+ & M4$-$M1 \TYPE{} F1 & $-$0.082 & [$-$0.102, $-$0.064] & $<$0.001 \\
+ & M4$-$M2 \DET{} F1 & $-$0.008 & [$-$0.016, $-$0.001] & 0.072 \\
+ & M4$-$M2 \TYPE{} F1 & $-$0.036 & [$-$0.055, $-$0.019] & 0.004 \\
 \midrule
-RQ2 & M4$-$M3-sym: TYPE macro-F1 & 0.461 & 0.453 & +0.008 & [$-$0.009, +0.022] & 0.732 & 3/5 \\
-RQ2 & M4$-$M3-sym: TYPE macro-R & 0.474 & 0.468 & +0.006 & [$-$0.014, +0.023] & 0.732 & 2/5 \\
+\multirow{2}{*}{RQ2} & M4$-$M3 \TYPE{} F1 & +0.008 & [$-$0.009, +0.022] & 0.732 \\
+ & M4$-$M3 \TYPE{} R & +0.006 & [$-$0.014, +0.023] & 0.732 \\
 \bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{Pre-declared primary comparisons.} A and B are seed-averaged
-scores and $\Delta$ is A$-$B. The CI is a 95\% paired bootstrap interval over
-texts (2{,}000 resamples, averaged over seeds); $p$ is two-sided and
-Holm-corrected over the six tests. ``Seeds'' counts the seeds (out of 5)
-whose out-of-fold score favours A.}
+\end{tabular}}
+\caption{\textbf{Pre-declared tests.} $\Delta$ is the seed-averaged
+difference; the CI is a 95\% paired bootstrap interval. \TYPE{} scores use
+gold-polarized texts.}
 \label{tab:primary}
-\end{table*}
+\end{table}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{figures/fig_primary_comparisons.pdf}
-\caption{\textbf{Primary comparisons as paired differences.} Pink points are
-the seed-averaged difference (M4-core minus the baseline), black bars the
-95\% bootstrap CI, and grey dots the five per-seed differences. A bar that
-crosses the vertical zero line is not significant. All four RQ1 intervals lie
-left of zero (M4-core worse). Both RQ2 intervals straddle zero (no detectable
-difference), with seeds scattered on both sides.}
+\caption{\textbf{The six pre-declared tests.} Pink: mean difference
+(M4-core minus baseline). Black bar: 95\% CI. Grey: the five per-seed
+differences. All RQ1 bars lie left of zero (M4-core worse); both RQ2 bars
+cross zero (no detectable difference).}
 \label{fig:forest}
 \end{figure}
 
-Table~\ref{tab:primary} and Figure~\ref{fig:forest} give the verdict.
-M4-core is below M1 on \DET{} ($-$0.014) and \TYPE{} ($-$0.082) macro-F1, and
-below M2 on \TYPE{} ($-$0.036); all three survive Holm correction, with 0/5
-seeds in M4-core's favour. Against M2 on \DET{}, the difference ($-$0.008) is
-negative in every seed but not significant after correction
-($p_{\text{Holm}}=0.072$). \textbf{RQ1 is not supported} under the frozen
-protocol. Two mechanisms explain the outcome, and both matter for how far
-the result generalises.
+Table~\ref{tab:primary} and Figure~\ref{fig:forest} show that \textbf{H1 is
+not supported}. M4-core is below M1 on both metrics and below M2 on \TYPE{};
+these three differences remain significant after Holm correction, and no
+seed favours M4-core. Against M2 on \DET{}, M4-core is lower in all five
+seeds, but the difference is not significant after correction
+($p=0.072$). Two mechanisms explain the result.
 
-\paragraph{The \TYPE{} gap is the price of consistency.}
-Because \TYPE{} is scored only on gold-polarized texts, a model is never
-penalised for dimensions it predicts on non-polarized texts. M1 and M2
-exploit this fully (\S\ref{sec:lvr}). M4-core, like M3, can only be right on
-a polarized text if its detection also fires, so its \TYPE{} recall is capped
-by its detection recall. The RQ1 \TYPE{} comparison therefore pits a
-consistent model against inconsistent ones. The fair comparison at matched
-consistency is RQ2, and when the same predictions are scored on all texts the
-sign reverses (\S\ref{sec:scope}). Restricted to polarized texts, M4-core is
-still \emph{more precise} than M2 ($+$0.021 \TYPE{} macro-P, CI
-[$+$0.001, $+$0.039], 4/5 seeds; Appendix Table~\ref{tab:secondary-cmp}).
+\paragraph{The \DET{} gap comes from false alarms.}
+M4-core finds more polarized texts but also flags more neutral ones
+(Table~\ref{tab:det}). Its \DET{} recall rises from 0.761 (M2) to 0.831,
+while precision falls from 0.722 to 0.674. The cause is the decision rule.
+M4-core says ``polarized'' when \emph{any} type passes its threshold, and
+those thresholds were tuned only on polarized texts, so their tuning never
+saw the cost of a false alarm. The Political threshold, which almost decides
+detection on its own, fell to the bottom of the grid (0.20) in 19 of 25
+runs. M1 and M2, by contrast, tune a dedicated \DET{} threshold for \DET{}
+macro-F1. The \DET{} comparison is therefore not calibration-matched.
 
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\begin{adjustbox}{max width=\columnwidth}%
-\begin{tabular}{@{}lrrrr@{}}
+\begin{tabular}{@{}lccccc@{}}
 \toprule
-Model & FP & FN & Pred.\ pos. & Non-pol.\ w/ TYPE \\
+Model & \DET{} P & \DET{} R & FP & FN & Neutral w/ type \\
 \midrule
-M1 (independent) & 325 & 280 & 1{,}220 & 2{,}039 \\
-M2 (shared MTL) & 345 & 281 & 1{,}239 & 2{,}047 \\
-M3 one-way & 345 & 281 & 1{,}239 & 345 \\
-M3 symmetric & 345 & 281 & 1{,}239 & 345 \\
-M4-core (noisy-OR) & 472 & 199 & 1{,}448 & 472 \\
+M1 & 0.733 & 0.761 & 325 & 280 & 2{,}039 \\
+M2 & 0.722 & 0.761 & 345 & 281 & 2{,}047 \\
+M3 & 0.722 & 0.761 & 345 & 281 & 345 \\
+M4 & 0.674 & \textbf{0.831} & 472 & \textbf{199} & 472 \\
 \bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{\DET{} error profile} (per seed, over 3{,}222 texts). FP:
-non-polarized texts predicted polarized. FN: polarized texts missed. Last
-column: non-polarized texts receiving at least one \TYPE{} label. M4-core
-trades 82 fewer misses for 127 more false alarms than M2.}
+\end{tabular}
+\caption{\textbf{Detection errors} (per seed, 3{,}222 texts). P/R: precision
+and recall of the polarized class. FP: neutral texts flagged as polarized.
+FN: polarized texts missed. Last column: neutral texts given at least one
+type.}
 \label{tab:det}
 \end{table}
 
-\paragraph{The \DET{} gap is a decoding artifact.}
-M4-core over-detects (Table~\ref{tab:det}): 472 false positives per seed
-against 345 for M2, and 199 misses against 281. Its \DET{} recall is 0.831
-against 0.761 for M2 (+0.070, CI [$+$0.059, $+$0.081]), while precision falls
-from 0.722 to 0.674.
+\paragraph{The \TYPE{} gap is the price of consistency.}
+Under the pre-declared metric, a type predicted for a neutral text is not
+counted as an error. M1 and M2 benefit fully from this. A consistent model
+cannot: on a polarized text it can only output a type if it also detects
+the text, so its type recall is capped by its detection. The RQ1 \TYPE{}
+test therefore compares a consistent model with inconsistent ones. When the
+same predictions are scored on all texts, the ranking reverses
+(Table~\ref{tab:main}): M4-core scores 0.396, against 0.299 for M1 and 0.255
+for M2. The paired gains are +0.097 [+0.078, +0.114] over M1 and +0.141
+[+0.121, +0.158] over M2, in all five seeds. This view is exploratory and
+does not change the pre-declared verdict, but it shows that the RQ1 outcome
+depends on what the metric chooses to count. We have not yet verified which
+scope the official SemEval scorer uses.
 
-The decoding rule explains this. M4-core's \DET{} decision is the OR of five
-thresholds, each tuned for \emph{its own label's} F1 on polarized texts only,
-so no tuning objective ever sees the cost of a false alarm on a non-polarized
-text. The Political threshold, which effectively decides detection, is
-driven to the bottom of the grid: mean 0.22, and exactly 0.20 in 19 of 25
-runs (Appendix Table~\ref{tab:thresholds}). M1 and M2 instead tune a dedicated
-\DET{} threshold for \DET{} macro-F1, and M1-\DET{} also selects its
-checkpoint on \DET{}.
-
-The \DET{} comparison is therefore not decoding-matched. We report this as a
-property of the frozen protocol rather than adjusting it after seeing results.
-
-\paragraph{Sharing alone also hurts.}
-M2 is below M1 by $-$0.046 \TYPE{} F1 (CI [$-$0.060, $-$0.033]) and $-$0.006
-\DET{} F1. This is consistent with the negative transfer on sparse labels
-reported by \citet{yeze-2026}. However, M1 uses twice the parameters and a
-\DET{}-selected checkpoint.
-
-\subsection{RQ2: post-hoc gating versus training-time structure}
+\subsection{RQ2: Gating versus training-time structure}
 \label{sec:rq2}
 
-With both M3 and M4-core at $\LVR=0$, the primary comparisons are
-statistically null (Table~\ref{tab:primary}). M4-core's \TYPE{} F1 is
-$+$0.008 higher (CI [$-$0.009, $+$0.022], 3/5 seeds) and its \TYPE{} recall
-$+$0.006 (CI [$-$0.014, $+$0.023], 2/5 seeds), with $p_{\text{Holm}}=0.73$
-for both. \textbf{RQ2 is inconclusive.} The data support neither ``structure
-preserves more recall than gating'' nor the reverse, and we report it as
-such.
-
-Three secondary results qualify this:
-\begin{enumerate}\setlength\itemsep{1pt}
-\item On the 426 \textbf{multi-label} texts, M4-core recovers more gold labels
-than M3: label recall 0.610 vs.\ 0.585, $+$0.025 (CI [$+$0.009, $+$0.041],
-4/5 seeds; Table~\ref{tab:secondary}). This is the direction
-\citet{sagarmatha-2026} anticipate (``gating limits multi-label recall''),
-but it is an exploratory comparison.
-\item M4-core is \textbf{more stable}: its \TYPE{} F1 seed sd is 0.007,
-against 0.022 for M3.
-\item M4-core pays $-$0.008 \DET{} macro-F1 (CI [$-$0.016, $-$0.001]) for its
-broader detection.
-\end{enumerate}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_per_label_recall.pdf}
-\caption{\textbf{Per-label \TYPE{} recall on gold-polarized texts} (mean
-$\pm$ sd over seeds; $n$ = gold support). Comparing the yellow (M3) and pink
-(M4-core) bars isolates RQ2 per label. M4-core recovers recall on Political,
-where its higher detection recall matters most, and on the rarest label,
-Gender/sexual. It loses recall on \textit{Other}. The gap between the top two
-bars and the rest is the recall that consistency costs on each label.}
-\label{fig:perlabel}
-\end{figure*}
+Both M3 and M4-core have zero violations, so RQ2 compares them at equal
+consistency. Their pre-declared scores are statistically tied
+(Table~\ref{tab:primary}). The \TYPE{} F1 difference is +0.008 with a 95\%
+CI of [$-$0.009, +0.022], and the seeds split 3/5 and 2/5. \textbf{H2 is not
+supported}, and neither is the opposite. The intervals do rule out large
+effects: M4-core recovers less than a fifth of the 0.127 recall that gating
+costs relative to M2.
 
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{3pt}
-\begin{adjustbox}{max width=\columnwidth}%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& M3 & M4-core & M4$-$M3 [95\% CI] \\
+\midrule
+Coverage          & 0.768 & 0.843 & +0.075 [+0.064, +0.087] \\
+Cond.\ recall     & 0.853 & 0.823 & $-$0.030 [$-$0.041, $-$0.020] \\
+Micro recall      & 0.655 & 0.694 & +0.038 [+0.027, +0.049] \\
+Macro recall      & 0.468 & 0.474 & +0.006 [$-$0.014, +0.023] \\
+\midrule
+\multicolumn{4}{@{}l}{\emph{Median $p_k$ on texts that carry label $k$ (M2 $\rightarrow$ M4-core)}} \\
+\multicolumn{4}{@{}l}{Political 0.577 $\rightarrow$ 0.754 \quad Religious 0.772 $\rightarrow$ 0.419} \\
+\multicolumn{4}{@{}l}{Gender 0.354 $\rightarrow$ 0.051 \quad Other 0.392 $\rightarrow$ 0.159} \\
+\bottomrule
+\end{tabular}
+\caption{\textbf{Why RQ2 ties} (exploratory). Coverage: share of gold type
+labels on texts the model detects. Conditional recall: share of those labels
+it then predicts. Micro recall $=$ coverage $\times$ conditional recall. The
+first three differences hold in all five seeds.}
+\label{tab:decomp}
+\end{table}
+
+\paragraph{Two opposite effects cancel.}
+For a consistent model, label recall equals \emph{coverage} (the share of
+gold labels on texts it detects) times \emph{conditional recall} (how many
+of those labels it then predicts). Table~\ref{tab:decomp} shows that the
+models sit at opposite ends of this product. M3 keeps M2's discrimination
+(0.853) but inherits the 23\% of labels on texts M2's detector misses.
+M4-core detects more (coverage +0.075) but discriminates less well among
+detected texts ($-$0.030). Both effects are consistent across all seeds. The
+coverage gain falls mainly on Political, which carries two thirds of all
+type labels. The discrimination loss falls on Racial/ethnic, Religious and
+Other. Micro recall, which weights labels by frequency, therefore favours
+M4-core (+0.038), while macro recall, which weights all labels equally,
+shows a tie.
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{@{}lrcc@{}}
 \toprule
 Label & $n$ & $\Delta$ recall [95\% CI] & $\Delta$ F1 [95\% CI] \\
 \midrule
-Political & 1{,}150 & \textbf{+0.067 [+0.055, +0.078]} & \textbf{+0.040 [+0.033, +0.048]} \\
-Racial/ethnic & 281 & $-$0.011 [$-$0.041, +0.019] & \textbf{$-$0.026 [$-$0.051, $-$0.003]} \\
-Religious & 112 & $-$0.016 [$-$0.059, +0.026] & $-$0.006 [$-$0.041, +0.030] \\
-Gender/sexual & 72 & \textbf{+0.064 [+0.009, +0.116]} & +0.039 [$-$0.014, +0.089] \\
-Other & 126 & \textbf{$-$0.073 [$-$0.113, $-$0.034]} & $-$0.009 [$-$0.039, +0.019] \\
+Political & 1{,}150 & \textbf{+0.067} [+.055, +.078] & \textbf{+0.040} [+.033, +.048] \\
+Racial/ethnic & 281 & $-$0.011 [$-$.041, +.019] & \textbf{$-$0.026} [$-$.051, $-$.003] \\
+Religious & 112 & $-$0.016 [$-$.059, +.026] & $-$0.006 [$-$.041, +.030] \\
+Gender/sexual & 72 & \textbf{+0.064} [+.009, +.116] & +0.039 [$-$.014, +.089] \\
+Other & 126 & \textbf{$-$0.073} [$-$.113, $-$.034] & $-$0.009 [$-$.039, +.019] \\
 \bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{RQ2 per label}: M4-core minus M3-symmetric on gold-polarized
-texts, with 95\% paired bootstrap CIs. Bold marks intervals that exclude
-zero. The macro average hides opposing per-label effects.}
-\label{tab:perlabel}
+\end{tabular}}
+\caption{\textbf{RQ2 per label}: M4-core minus M3 on gold-polarized texts
+(exploratory). Bold: the 95\% interval excludes zero.}
+\label{tab:perlabel-rq2}
 \end{table}
 
-\paragraph{Per-label effects cancel in the macro average.}
-Table~\ref{tab:perlabel} and Figure~\ref{fig:perlabel} show opposite
-movements underneath the null macro result.
-\begin{itemize}\setlength\itemsep{1pt}
-\item \textbf{Gains.} M4-core gains recall on Political ($+$0.067) and on the
-rarest label, Gender/sexual ($+$0.064, CI [$+$0.009, $+$0.116]).
-\item \textbf{Losses.} It loses recall on \textit{Other} ($-$0.073) and F1 on
-Racial/ethnic ($-$0.026).
-\end{itemize}
-One plausible reading is that \textit{Other}, the most heterogeneous label,
-absorbs the strongest push-down from the noisy-OR \DET{} loss on non-polarized
-text. That motivates the separate treatment of \textit{Other} in RQ3
-(\S\ref{sec:remaining}).
+\paragraph{The tie hides per-label differences.}
+Table~\ref{tab:perlabel-rq2} shows the same pattern label by label. M4-core
+is clearly better on Political and recovers more of the rarest label,
+Gender/sexual. It is worse on Other and less precise on Racial/ethnic. A
+macro average gives each label equal weight, so these gains and losses
+cancel.
 
-\subsection{Gating audit: what M3 removes}
-\label{sec:audit}
+\paragraph{Why M4-core weakens rare labels.}
+The noisy-OR loss does two things at once (Table~\ref{tab:decomp}, bottom).
+On neutral texts it pushes every type probability close to zero (median
+$\le 0.012$, against up to 0.55 for M2), which is the intended effect. But
+on polarized texts, the detection target can be satisfied by Political
+alone, so the loss rewards raising Political and gives little reason to
+raise the other heads. As a result, rare labels are suppressed even on texts
+that truly have them: the median Gender probability on Gender texts falls
+from 0.354 to 0.051. This is a credit-assignment problem. In
+Eq.~\ref{eq:noisyor}, once one head is confident, the gradient reaching the
+other heads becomes small.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\columnwidth]{figures/fig_gating_audit.pdf}
-\caption{\textbf{What gating removes.} The three bars partition the TYPE
-labels that M3 deletes from M2's predictions, per seed. The long top bar is
-gating working as intended: wrong labels on non-polarized texts. The bottom
-bar is its cost: correct labels deleted because M2's detection head missed a
-polarized text.}
-\label{fig:audit}
-\end{figure}
+\paragraph{What gating removes.}
+Per seed, gating deletes 4{,}379 of the 6{,}647 type labels M2 predicts.
+87.7\% of them are false alarms on neutral texts, which is gating working as
+intended. But it also deletes \textbf{338 correct labels, 22.9\%} of all
+correct type predictions M2 makes. Every one of them is on a polarized text
+that M2's detection head missed, and on 98.7\% of those texts M2 had already
+predicted at least one correct type. This is the error propagation that
+\citet{silla2011survey} describe for top-down classifiers. The loss is
+larger on single-label texts ($-$0.239 recall) than on multi-label texts
+($-$0.161). The cost of gating therefore comes from detection misses, not
+from the number of labels on a text.
+
+% ===================================================================
+\section{Progress Against the Proposal}
+\label{sec:progress}
 
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{4pt}
-\begin{adjustbox}{max width=\columnwidth}%
-\begin{tabular}{@{}lrr@{}}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}ll@{}}
 \toprule
-Quantity (per seed) & Mean $\pm$ sd & Share \\
+Proposal item & Status \\
 \midrule
-TYPE labels predicted by M2 & 6{,}647 $\pm$ 775 &  \\
-Labels removed by gating & 4{,}379 $\pm$ 767 &  \\
-\quad wrong{,} on non-polarized texts & 3{,}839 $\pm$ 726 & 87.7\% \\
-\quad wrong{,} on polarized texts & 202 $\pm$ 51 & 4.6\% \\
-\quad \textbf{correct}{,} on polarized texts & 338 $\pm$ 29 & 7.7\% \\
-Polarized texts gated (M2 DET misses) & 281 $\pm$ 25 &  \\
-\quad with $\geq$1 correct M2 TYPE label & 277 $\pm$ 26 & 98.7\% \\
-DET decisions changed by OR step & 0 $\pm$ 1 &  \\
+Stratified 5-fold CV, metrics, LVR & Done \\
+M1 and M2 (5 folds $\times$ 5 seeds) & Done \\
+M3 gating & Done (re-implemented) \\
+M4 noisy-OR & Done as M4-core \\
+Full 5$\times$5 ladder and paired tests & Done (ahead of plan) \\
+Label-aware attention, Other head & Kept as RQ3 \\
+TF-IDF, BERT, RoBERTa baselines & Deferred \\
+Learned loss weighting & Deferred \\
+Comparison with 12B--27B systems & Kept as RQ4 \\
+Leaderboard claim & Not made (RQ4) \\
 \bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{M2$\rightarrow$M3 gating audit} (per seed over 3{,}222 texts;
-mean $\pm$ sd over seeds). Shares are relative to labels removed, or to
-polarized texts gated for the last share row. The 338 correct labels removed
-are 22.9\% of the 1{,}479 correct \TYPE{} labels M2 predicts.}
-\label{tab:gating}
+\end{tabular}}
+\caption{Status of the work planned in the proposal.}
+\label{tab:progress}
 \end{table}
 
-Figure~\ref{fig:audit} and Table~\ref{tab:gating} make C2's mechanism
-concrete. Per seed, gating removes 4{,}379 of the 6{,}647 dimension labels M2
-predicts, and 87.7\% of the removals are false alarms on non-polarized
-texts. That is gating doing its job. It also removes \textbf{338 correct
-labels}, 22.9\% of everything M2 gets right.
-
-The reason is error propagation down the hierarchy. M2's \DET{} head misses
-281 polarized texts per seed, and on \textbf{98.7\%} of them (277) M2 had
-already predicted at least one correct dimension. Gating discards those
-labels because the parent decision was wrong. The symmetric OR step almost
-never fires (0.4 \DET{} changes per seed).
-
-On the primary metric, this costs M3 $-$0.127 \TYPE{} recall
-(CI [$-$0.145, $-$0.110]) and $-$0.043 \TYPE{} F1 relative to M2, and
-$-$0.161 recall on multi-label texts. It gains only $+$0.025 precision. The
-loss is much larger than the 0.511$\rightarrow$0.506 drop of
-\citet{sagarmatha-2026}; their scoring scope may differ from ours
-(\S\ref{sec:scope}).
-
-\subsection{Sensitivity to the \TYPE{} scoring scope}
-\label{sec:scope}
-
-\begin{table*}[t]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}lccccccc@{}}
-\toprule
-& \multicolumn{2}{c}{\textbf{DET} (positive class)} & \multicolumn{3}{c}{\textbf{TYPE} on all 3{,}222 texts} & \multicolumn{2}{c}{\textbf{Label recall}} \\
-\cmidrule(lr){2-3}\cmidrule(lr){4-6}\cmidrule(l){7-8}
-Model & P & R & macro-F1 & macro-P & macro-R & multi-label & single-label \\
-\midrule
-M1 (independent) & \textbf{0.733\,{\scriptsize$\pm$0.002}} & 0.761\,{\scriptsize$\pm$0.026} & 0.299\,{\scriptsize$\pm$0.013} & 0.203\,{\scriptsize$\pm$0.014} & \textbf{0.600\,{\scriptsize$\pm$0.023}} & 0.743\,{\scriptsize$\pm$0.020} & \textbf{0.987\,{\scriptsize$\pm$0.002}} \\
-M2 (shared MTL) & 0.722\,{\scriptsize$\pm$0.009} & 0.761\,{\scriptsize$\pm$0.021} & 0.255\,{\scriptsize$\pm$0.029} & 0.169\,{\scriptsize$\pm$0.023} & 0.595\,{\scriptsize$\pm$0.019} & \textbf{0.746\,{\scriptsize$\pm$0.017}} & 0.987\,{\scriptsize$\pm$0.004} \\
-M3 one-way & 0.722\,{\scriptsize$\pm$0.009} & 0.761\,{\scriptsize$\pm$0.021} & 0.382\,{\scriptsize$\pm$0.017} & 0.339\,{\scriptsize$\pm$0.019} & 0.468\,{\scriptsize$\pm$0.036} & 0.585\,{\scriptsize$\pm$0.033} & 0.748\,{\scriptsize$\pm$0.027} \\
-M3 symmetric & 0.722\,{\scriptsize$\pm$0.009} & 0.761\,{\scriptsize$\pm$0.021} & 0.382\,{\scriptsize$\pm$0.017} & 0.339\,{\scriptsize$\pm$0.019} & 0.468\,{\scriptsize$\pm$0.036} & 0.585\,{\scriptsize$\pm$0.033} & 0.748\,{\scriptsize$\pm$0.027} \\
-M4-core (noisy-OR) & 0.674\,{\scriptsize$\pm$0.008} & \textbf{0.831\,{\scriptsize$\pm$0.015}} & \textbf{0.396\,{\scriptsize$\pm$0.008}} & \textbf{0.348\,{\scriptsize$\pm$0.008}} & 0.474\,{\scriptsize$\pm$0.022} & 0.610\,{\scriptsize$\pm$0.018} & 0.805\,{\scriptsize$\pm$0.010} \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{\textbf{Secondary metrics.} \DET{} precision and recall for the
-polarized class; \TYPE{} scored on \emph{all} 3{,}222 texts (non-polarized
-texts count as all-negative); label-level recall on the 426 multi-label and
-749 single-label polarized texts. Best per column in bold.}
-\label{tab:secondary}
-\end{table*}
-
-Scoring \TYPE{} on all texts counts every dimension predicted for a
-non-polarized text as a false positive. This view is pre-declared, and it
-matches the leaderboard setting if the official scorer evaluates Subtask~2
-over all texts, which we have not yet verified.
-
-Under it the ranking \emph{reverses} (Table~\ref{tab:secondary}). M4-core
-(0.396) $>$ M3 (0.382) $>$ M1 (0.299) $>$ M2 (0.255). M4-core exceeds M1 by
-$+$0.097 (CI [$+$0.078, $+$0.114]) and M2 by $+$0.141 (CI [$+$0.121,
-$+$0.158]), in 5/5 seeds each. Against M3 it gains $+$0.014 (CI
-[$-$0.001, $+$0.026], 4/5 seeds), while M3 itself gains $+$0.127 over M2.
-
-The RQ1 conclusion is therefore \emph{conditional on the scoring scope}. The
-consistent models lose to the inconsistent ones only when the inconsistency
-is not penalised. Appendix Figure~\ref{fig:secondary} plots these metrics.
+Table~\ref{tab:progress} compares our progress with the proposal. The
+controlled four-model comparison, which the proposal scheduled for
+mid-October, is complete, including the full five-fold, five-seed sweep and
+the significance tests. Three changes were deliberate:
+\begin{itemize}\setlength\itemsep{1pt}
+\item \textbf{M4 became M4-core.} The proposal's M4 combined label-aware
+attention with noisy-OR. Testing both at once would make it impossible to
+tell which one causes a difference, so we first isolated the hierarchy
+mechanism. Label-aware attention remains RQ3.
+\item \textbf{M3 was re-implemented.} Instead of adapting the released
+Sagarmatha system, we applied its inference rule to our own M2, so that M3
+and M4-core share the same encoder, data and thresholds.
+\item \textbf{Classical baselines were deferred.} The TF-IDF, BERT and
+RoBERTa baselines do not affect RQ1 or RQ2, so they come after the
+controlled comparison.
+\end{itemize}
+We also built the supporting infrastructure: configuration-driven training,
+saved predictions for every run, experiment tracking, an analysis pipeline
+that regenerates every table from the saved predictions, and unit tests.
+These tests caught two bugs before the main sweep: a crash in the M1
+detection model, and an unstable noisy-OR gradient when all type logits are
+very negative.
 
 % ===================================================================
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph{What the evidence supports.}
-The diagnostic part of C2 holds on its own. Unconstrained heads trained with
-a masked \TYPE{} loss are almost maximally inconsistent (62\% of texts,
-essentially every non-polarized one). Post-hoc gating fixes this at a
-quantifiable price: 23\% of correct labels, removed almost exclusively through
-detection misses. Training-time structure reaches the same consistency with
-equal macro accuracy, better multi-label recall and lower variance. The
-evidence does \emph{not} support the claims that noisy-OR improves macro-F1
-over independent or multi-task models (RQ1), or that structure preserves
-more \TYPE{} recall than gating in the macro average (RQ2). Following our
-plan, we do not reframe either question after seeing the results.
+We expected the structured model to avoid gating's recall loss because it
+``discards nothing''. The results show why this was too simple. Any model
+that respects the hierarchy cannot recover a type on a text it fails to
+detect, so its type recall is limited by its detection coverage. Where the
+constraint is enforced does not remove this limit; it changes who pays for
+it. Post-hoc gating keeps the unconstrained model's type discrimination but
+inherits its detector's misses. Training-time noisy-OR detects more texts,
+but its loss concentrates evidence in the dominant label and its decoder
+inherits thresholds that never saw neutral text.
 
-\paragraph{Why the trade-off did not disappear.}
-Our proposal hypothesised that M4 avoids gating's recall loss because it
-``discards nothing''. The audit shows why that is incomplete: under
-\emph{any} consistent decoder, a polarized text whose detection fails yields
-no dimension, so \TYPE{} recall on polarized texts is bounded by \DET{}
-recall. M4-core raises \DET{} recall (0.831 vs.\ 0.761), which is where its
-Political and Gender gains come from, but pays in \DET{} precision because
-its per-label thresholds never see non-polarized text. The binding constraint
-is the \emph{decoder}, not the training objective. The first new experiment
-is therefore a \DET{}-aware threshold search. It does not test whether the
-\emph{direction} of the hierarchy is what failed, so the second experiment
-is a parent-to-child model (RQ5, \S\ref{sec:remaining}).
+Three lessons follow. First, the evaluation scope matters: whether \TYPE{}
+is scored on polarized texts or on all texts reverses the model ranking.
+Second, calibration is part of the model. M4-core's main weaknesses come
+from how its probabilities are turned into decisions, not only from how it
+is trained. Third, the direction of the hierarchy matters. Deriving the
+parent from the children lets a confident child switch on the parent, and
+lets it absorb the credit that should reach the other children. These
+lessons define the next stage.
 
 % ===================================================================
-\section{Remaining Work and Timeline}
-\label{sec:remaining}
+\section{Remaining Work and Research Questions}
+\label{sec:future}
+
+RQ1 and RQ2 are closed under the frozen protocol, and their answers stay as
+reported. The open question is no longer whether noisy-OR wins on the frozen
+macro-F1 numbers. It is whether the consistency--recall trade-off comes from
+the \emph{decoder}, from \emph{aggregating} types into detection, or from the
+\emph{hierarchy itself}. The remaining work tests these in that order. It
+keeps the two research questions from our proposal (RQ3 and RQ4) and adds
+one new question (RQ5). All primary tests and margins will be fixed before
+any new run.
+
+\paragraph{Decoder extension (not a new RQ).}
+\emph{Does M4-core improve once its thresholds see neutral texts?} We will
+rerun M4-core (25 runs) with thresholds tuned on \emph{all}
+inner-validation texts and a grid that extends below 0.20. Using the saved
+probabilities, we will also compare M3 and M4-core at the same detection
+operating point, which needs no new training.
+\emph{Why it matters:} RQ1 traced M4-core's \DET{} loss to thresholds tuned
+without neutral texts, and RQ2 compared the two consistent models at
+different operating points. This is the cheapest test of whether those
+results are decoding artefacts. The results will be reported beside the
+frozen RQ1/RQ2 tables, not instead of them.
+
+\paragraph{RQ5 (new): Does the direction of the hierarchy matter?}
+\emph{Can a calibrated parent-to-child model improve \TYPE{} while keeping
+\DET{} as good as M2's?} M4-core builds detection from the types. The new
+model, M5, does the reverse. It keeps an independent \DET{} head $d$ and a
+conditional type head $q_k$, and predicts $p_k = d \cdot q_k$, the
+factorization $P(t_k \mid x) = P(d \mid x)\,P(t_k \mid d, x)$ implied by the
+hierarchy. Low detection confidence then softly lowers every type, and a
+confident type can no longer switch detection on. We will test a soft and a
+hard-consistency variant with the same encoder, folds and seeds. The
+guardrail is non-inferiority: \DET{} macro-F1 no more than $\delta=0.01$
+below M2.
+\emph{Why it matters:} the decoder extension can fix M4-core's thresholds,
+but not the fact that one confident type switches detection on and absorbs
+the credit for the others (\S\ref{sec:rq2}). RQ5 tests whether the hierarchy
+helps when it follows the direction of the label definition.
+
+\paragraph{RQ3 (proposal): Do label-aware representations help rare labels?}
+\emph{Do label-specific representations improve rare-label and multi-label
+\TYPE{} performance, especially for Other?} As in our proposal, each named
+type gets a learned query that attends over the tokens
+\citep{mullenbach-etal-2018-explainable,nestor-etal-2026-polarizedteam}, and
+Other gets a separate head on the pooled representation, since it has no
+single meaning. RQ3 will run on the hierarchy variant kept after RQ5, so a
+new head is not confounded with a new constraint.
+\emph{Why it matters:} Gender/sexual and Other are the weakest labels for
+every model (F1 $\le$ 0.29) and lose most under noisy-OR, and all five types
+currently share one pooled vector. Type classification is also where the
+task has the most headroom (0.532 best vs.\ 0.347 baseline).
+
+\paragraph{RQ4 (proposal): How does a 184M model compare with 12B--27B systems?}
+\emph{How does our best structured encoder compare with the much larger
+systems that lead the English leaderboard, relative to model size?} We will
+place our out-of-fold scores beside the published English results (0.825
+\DET{}, 0.532 \TYPE{}) and state clearly that the two come from different
+data splits. We will not call this a leaderboard comparison. One final model
+will be trained with its checkpoint kept, and the development set will serve
+only as a sanity check. The test file stays unused until its labels are
+confirmed; the one text it shares with the training set will then be left
+out.
+\emph{Why it matters:} it shows how much of the gap to large models a small,
+structured encoder closes, which is the ``structure over scale'' question in
+our title.
+
+\paragraph{Deferred.}
+The TF-IDF, BERT and RoBERTa baselines and learned loss weighting
+\citep{kendall2018} are deferred. Their time now goes to the decoder
+extension and RQ5, which test our main findings directly.
+
+% ===================================================================
+\section{Timeline}
+\label{sec:timeline}
 
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}p{1.55cm}p{5.45cm}@{}}
+\begin{tabular}{@{}p{1.45cm}p{5.55cm}@{}}
 \toprule
-Dates & Work package \\
+Dates & Work \\
 \midrule
-Oct 2--3 & Read the official Subtask~2 scorer. Before any new run, freeze
-whether later \TYPE{} scores use all texts, and freeze the RQ5 tests and
-the \DET{} margin $\delta=0.01$. \\
-Oct 4--6 & Decoder extension, not a revision of RQ1: rerun M4-core (25 runs)
-with thresholds tuned on \emph{all} inner-validation texts and a grid below
-0.20. Compare only to frozen M4-core, M2, and M3. \\
-Oct 7--16 & RQ5. Parent-to-child M5, soft and hard-consistency variants, same
-encoder, folds, and seeds. Detection probability gates the dimension
-probabilities. \DET{} macro-F1 must be no more than $\delta$ below M2. \\
-Oct 17--23 & RQ3, as in the proposal: label-aware cross-attention and a
-separate \textit{Other} head, on the hierarchy variant kept after RQ5.
-Single-label vs.\ multi-label analysis. \\
-Oct 24--27 & RQ4, without a leaderboard claim. Set our 184M out-of-fold
-scores beside the published 12B--27B English numbers and state the split
-difference in the same table. One final fit with checkpoints kept.
-Development data is a sanity check only. \\
-Oct 28--31 & Error analysis of \textit{Other} and false-positive boundary
-cases; final report and code release. \\
+Oct~2--3 & Read the official Subtask~2 scorer. Fix whether later \TYPE{} scores use all texts, the RQ5 tests and the margin $\delta=0.01$. \\
+Oct~4--6 & Decoder extension: rerun M4-core (25 runs) with thresholds tuned on all texts; operating-point comparison of M3 and M4-core. \\
+Oct~7--16 & RQ5: parent-to-child M5, soft and hard variants (25 runs each). \\
+Oct~17--23 & RQ3: label-aware heads and a separate Other head on the variant kept after RQ5; single- vs.\ multi-label analysis. \\
+Oct~24--27 & RQ4: comparison with published 12B--27B results; one final model with checkpoint; development sanity check. \\
+Oct~28--31 & Error analysis of Other and neutral false alarms; final report and code release. \\
 \bottomrule
 \end{tabular}
-\caption{Plan to the final submission (October 31). RQ1 and RQ2 are closed
-under the frozen protocol. Later rows are new experiments.}
+\caption{Plan to the final submission (October 31). RQ1 and RQ2 are closed;
+every later row is a new experiment.}
 \label{tab:timeline}
 \end{table}
 
-Table~\ref{tab:timeline} is the plan. The open question is no longer whether
-noisy-OR wins on the frozen macro-F1 numbers. It is whether the
-consistency--recall trade-off comes from the decoder, from aggregating
-dimensions into detection, or from the hierarchy itself.
-\begin{enumerate}\setlength\itemsep{1pt}
-\item The October 4--6 rerun changes only M4-core's threshold rule. Its
-results are reported beside the frozen RQ1/RQ2 tables, not instead of them.
-M3 stays the re-implementation of the \citet{sagarmatha-2026} rule already
-described above.
-\item RQ5 is the test the audit motivates. M4-core builds detection from the
-dimensions. M5 does the reverse: a calibrated detection probability
-suppresses dimension probabilities. The primary \TYPE{} metric is whichever
-scope the scorer check freezes on October 2--3. The guardrail is
-non-inferiority: \DET{} macro-F1 no more than $0.01$ below M2, fixed before
-the runs.
-\item RQ3 and RQ4 from the proposal remain, in that order. RQ3 runs on the
-hierarchy variant RQ5 retains, so a new head is not confounded with a new
-constraint. RQ4 cites the published 0.825 and 0.532 scores as external
-numbers on the official test set. Our scores stay training-set
-cross-validation. We will not call that a leaderboard comparison. The test
-file stays unused until its labels are confirmed, and the duplicated
-train/test text is then left out.
-\item TF--IDF, BERT, RoBERTa, and uncertainty-weighted $\lambda$
-\citep{kendall2018} are deferred. The weeks they occupied now belong to the
-decoder extension and to RQ5.
-\end{enumerate}
+Table~\ref{tab:timeline} gives the plan. Each 25-run condition takes about
+one GPU-hour on our hardware, so the training budget is not a risk. The main
+risks are scientific: M5 may lose \DET{} recall through its gate, and the
+test-label question may not be resolved in time. In that case RQ4 will rely
+on the development set and the published numbers, and will say so.
 
 % ===================================================================
 \section{Conclusion}
 
-We built and ran a controlled, fully paired comparison of four ways to
-handle the POLAR detection/dimension hierarchy: 100 training runs, 25 derived
-conditions per post-processed model, and bootstrap CIs with multiplicity
-control.
-\begin{itemize}\setlength\itemsep{1pt}
-\item Unconstrained models contradict the hierarchy on most texts.
-\item Post-hoc gating removes the contradictions but also nearly a quarter of
-the correct dimension labels.
-\item A noisy-OR model reaches the same consistency with statistically equal
-macro accuracy, better multi-label recall and lower variance, but it does not
-beat the unconstrained baselines on the frozen metric.
-\end{itemize}
-Whether structure can \emph{eliminate} the consistency--recall trade-off now
-depends on the decoder first and on the direction of the hierarchy second.
-Both are separate from the frozen answers above.
+We set out to test whether the POLAR detection/type hierarchy should be part
+of the model rather than a rule applied afterwards. Unconstrained models
+contradict the hierarchy on most texts. A noisy-OR model removes all
+contradictions but does not beat independent or multi-task models on our
+pre-declared metrics, and it ties with post-hoc gating. The analysis shows
+why: consistency limits type recall to what is detected, the noisy-OR
+decoder inherits thresholds that never saw neutral text, and its loss
+favours the dominant label. Gating, for its part, removes almost a quarter
+of correct labels. These are specific and testable causes, and the final
+stage tests them directly.
 
 % ===================================================================
 \section*{Limitations}
-
-\begin{itemize}\setlength\itemsep{1pt}
-\item \textbf{Scoring scope.} \TYPE{} is scored on gold-polarized texts, as
-frozen before the experiments. This favours unconstrained models. We have not
-yet confirmed how the official scorer treats non-polarized texts.
-\item \textbf{Decoding not matched.} M1 and M2 tune a \DET{} threshold for
-\DET{}; M4-core cannot. Checkpoint selection also differs (M1-\DET{} on
-\DET{}, others on \TYPE{}). The Political threshold of M4-core hits the grid
-floor in 19/25 runs.
-\item \textbf{Parameter mismatch.} M1 uses 368M parameters against 184M for
-the other conditions.
-\item \textbf{Uncertainty.} Bootstrap CIs capture sampling variation over
-texts. Training randomness is reflected only through five seeds. Only the six
-primary tests are multiplicity-corrected.
-\item \textbf{Scope.} The results cover English cross-validation only.
-Weights were not retained in the sweep, so the development and test sets are
-not yet scored, and absolute numbers are not leaderboard-comparable.
-\item \textbf{Training budget.} Training is capped at 8 epochs, and 3 of 100
-runs selected the final epoch.
-\item \textbf{Hardware.} The runs used one consumer GPU rather than the
-planned cluster. Every condition used the same machine, so the comparison is
-internally consistent.
-\end{itemize}
-
-\section*{Ethical Considerations}
-We use the released POLAR data without collecting new data. The texts contain
-hostile and stereotyping content about protected groups. Polarization
-classifiers can be misused for surveillance or for silencing legitimate
-political speech, and their errors fall unevenly on the rare dimensions,
-where our models are weakest (Gender/sexual F1 $\leq$ 0.27). We report
-per-label results so that these weaknesses stay visible.
+The pre-declared \TYPE{} metric scores only gold-polarized texts, which
+favours unconstrained models, and we have not yet confirmed the official
+scorer's scope. Detection decisions are not calibration-matched across
+models, and M1 has twice the parameters of the others. Bootstrap intervals
+capture variation over texts; training variation is reflected only through
+five seeds, and only the six pre-declared tests are corrected for multiple
+comparisons. The decomposition and probability analyses were designed after
+seeing the main results. All results are English cross-validation scores
+from one consumer GPU, so they are not leaderboard-comparable.
 
 \bibliography{custom}
-
-% ===================================================================
-\appendix
-\onecolumn
-
-\section{Implementation and Reproducibility}
-\label{app:impl}
-
-\begin{table}[H]
-\centering\small
-\begin{tabular}{@{}lp{11.2cm}@{}}
-\toprule
-Setting & Value \\
-\midrule
-Encoder & \texttt{microsoft/deberta-v3-base}, revision \texttt{de19fe7} (safetensors; tensor-identical to \texttt{main} \texttt{8ccc9b6}) \\
-Pooling / dropout / max length & attention-masked mean / 0.1 / 256 tokens \\
-Optimiser & AdamW, lr $2\times10^{-5}$, weight decay 0.01, linear schedule, 10\% warm-up, clip 1.0 \\
-Batch & 8 per step, 2 accumulation steps (effective 16); eval batch 16 \\
-Epochs & $\leq$8, early-stopping patience 2 on the selection metric \\
-Loss & BCE (\DET{}) $+\,\lambda\,$masked weighted BCE (\TYPE{}), $\lambda=1$, $w_k=\#\text{neg}_k/\#\text{pos}_k$ within polarized texts \\
-Precision & FP16 autocast with FP32 master weights and dynamic loss scaling \\
-Folds & 5, iterative multilabel stratification over \DET{}+5 \TYPE{}, seed 2026 \\
-Inner validation & 10\% of the four training folds, multilabel-stratified, seeded by the run seed \\
-Seeds & 13, 21, 42, 87, 100 \\
-Threshold grid & 0.20--0.80, step 0.05; per-label \TYPE{} thresholds; \DET{} threshold for M1/M2 \\
-Bootstrap & 2{,}000 paired resamples of texts, seed 2026; percentile CIs; Holm over 6 primary tests \\
-Software / hardware & PyTorch 2.5.1 (CUDA 12.1), Transformers 4.57.6, scikit-learn 1.6.1; NVIDIA RTX 4060 Laptop GPU \\
-Tracking & every run, with its prediction file, logged to Weights \& Biases \\
-\bottomrule
-\end{tabular}
-\caption{Hyperparameters and implementation details shared by all trained conditions.}
-\label{tab:hparams}
-\end{table}
-
-\paragraph{Pipeline.}
-\texttt{create\_folds.py} writes the fixed fold file. \texttt{run\_local\_sweep.sh}
-trains the 100 runs, resumably and seed-major. \texttt{combine\_m1.py} and
-\texttt{reconcile\_m3.py} derive M1 and both M3 variants per fold--seed.
-\texttt{analyze\_mid\_submission.py} computes every metric, comparison and
-audit from the saved prediction files; its vectorised metrics are asserted
-equal to the project's reference implementation. \texttt{make\_report\_assets.py}
-produces every table and figure in this report. All numbers are therefore
-regenerated from saved out-of-fold predictions, never from dashboard
-summaries.
-
-\paragraph{Checks.}
-Each of the 20 model--seed prediction sets covers exactly the 3{,}222 texts
-once, with matching fold labels. Every run logged one completion event with
-no NaNs. The hierarchy invariants of \S\ref{sec:lvr} hold in every run. Two
-defects were fixed before the sweep, each covered by a unit test (8/8 pass):
-the M1-\DET{} forward pass rejected the \TYPE{} labels present in shared
-batches, and the noisy-OR logit had a NaN-gradient branch when all five
-logits were $\leq -19$.
-
-\section{Training Statistics and Thresholds}
-\label{app:training}
-
-\begin{table}[H]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Run type & Best epoch & Range & At cap & Epochs run & Min/run \\
-\midrule
-M1-DET & 2.8 & 1--5 & 0 & 4.8 & 1.9 \\
-M1-TYPE & 4.1 & 3--6 & 0 & 6.1 & 2.4 \\
-M2 & 3.9 & 2--8 & 2 & 5.8 & 2.3 \\
-M4-core & 5.8 & 4--8 & 1 & 7.5 & 2.9 \\
-\midrule
-\multicolumn{6}{@{}l}{Total: 100 runs, 3.9 GPU-hours} \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{Training statistics over the 25 runs of each trained condition. ``At cap'' counts runs whose best epoch was the last allowed (8). M4-core converges more slowly than M2: its \DET{} gradient reaches the encoder only through the product of five sigmoids.}
-\label{tab:training}
-\end{table}
-
-\begin{table}[H]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}lcccccc@{}}
-\toprule
-Run type & DET & Political & Racial & Religious & Gender & Other \\
-\midrule
-M1-DET & 0.47 (3) & -- & -- & -- & -- & -- \\
-M1-TYPE & -- & 0.31 (7) & 0.56 (2) & 0.63 (6) & 0.43 (6) & 0.40 (6) \\
-M2 & 0.49 (6) & 0.27 (4) & 0.48 (0) & 0.66 (7) & 0.57 (1) & 0.45 (4) \\
-M4-core & -- & 0.22 (19) & 0.50 (2) & 0.47 (1) & 0.50 (2) & 0.47 (7) \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{Mean selected thresholds over 25 runs, with the number of runs at the grid edge (0.20 or 0.80) in parentheses. M4-core's Political threshold is at the floor in 19/25 runs, which drives its \DET{} over-prediction (\S\ref{sec:rq1}).}
-\label{tab:thresholds}
-\end{table}
-
-\section{Full Per-Label Results}
-\label{app:perlabel}
-
-\begin{table}[H]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}llccccc@{}}
-\toprule
- & Model & Political & Racial/ethnic & Religious & Gender/sexual & Other \\
- & & ($n$=1{,}150) & ($n$=281) & ($n$=112) & ($n$=72) & ($n$=126) \\
-\midrule
-\multirow{5}{*}{F1} & M1 & 0.985\,{\scriptsize$\pm$0.005} & 0.623\,{\scriptsize$\pm$0.024} & 0.548\,{\scriptsize$\pm$0.019} & 0.266\,{\scriptsize$\pm$0.041} & 0.293\,{\scriptsize$\pm$0.019} \\
- & M2 & 0.986\,{\scriptsize$\pm$0.003} & 0.583\,{\scriptsize$\pm$0.021} & 0.477\,{\scriptsize$\pm$0.035} & 0.200\,{\scriptsize$\pm$0.060} & 0.238\,{\scriptsize$\pm$0.019} \\
- & M3-1w & 0.852\,{\scriptsize$\pm$0.015} & 0.547\,{\scriptsize$\pm$0.020} & 0.456\,{\scriptsize$\pm$0.030} & 0.175\,{\scriptsize$\pm$0.081} & 0.237\,{\scriptsize$\pm$0.022} \\
- & M3-sym & 0.852\,{\scriptsize$\pm$0.015} & 0.547\,{\scriptsize$\pm$0.020} & 0.456\,{\scriptsize$\pm$0.030} & 0.175\,{\scriptsize$\pm$0.081} & 0.237\,{\scriptsize$\pm$0.022} \\
- & M4 & 0.892\,{\scriptsize$\pm$0.012} & 0.521\,{\scriptsize$\pm$0.013} & 0.450\,{\scriptsize$\pm$0.017} & 0.214\,{\scriptsize$\pm$0.035} & 0.228\,{\scriptsize$\pm$0.007} \\
-\midrule
-\multirow{5}{*}{P} & M1 & 0.979\,{\scriptsize$\pm$0.001} & 0.565\,{\scriptsize$\pm$0.033} & 0.508\,{\scriptsize$\pm$0.041} & 0.265\,{\scriptsize$\pm$0.078} & 0.227\,{\scriptsize$\pm$0.022} \\
- & M2 & 0.979\,{\scriptsize$\pm$0.001} & 0.494\,{\scriptsize$\pm$0.034} & 0.409\,{\scriptsize$\pm$0.069} & 0.169\,{\scriptsize$\pm$0.075} & 0.169\,{\scriptsize$\pm$0.023} \\
- & M3-1w & 0.979\,{\scriptsize$\pm$0.003} & 0.532\,{\scriptsize$\pm$0.044} & 0.424\,{\scriptsize$\pm$0.067} & 0.235\,{\scriptsize$\pm$0.121} & 0.178\,{\scriptsize$\pm$0.030} \\
- & M3-sym & 0.979\,{\scriptsize$\pm$0.003} & 0.532\,{\scriptsize$\pm$0.044} & 0.424\,{\scriptsize$\pm$0.067} & 0.235\,{\scriptsize$\pm$0.121} & 0.178\,{\scriptsize$\pm$0.030} \\
- & M4 & 0.978\,{\scriptsize$\pm$0.002} & 0.490\,{\scriptsize$\pm$0.012} & 0.425\,{\scriptsize$\pm$0.022} & 0.241\,{\scriptsize$\pm$0.040} & 0.191\,{\scriptsize$\pm$0.028} \\
-\midrule
-\multirow{5}{*}{R} & M1 & 0.991\,{\scriptsize$\pm$0.009} & 0.695\,{\scriptsize$\pm$0.040} & 0.598\,{\scriptsize$\pm$0.036} & 0.289\,{\scriptsize$\pm$0.051} & 0.424\,{\scriptsize$\pm$0.067} \\
- & M2 & 0.992\,{\scriptsize$\pm$0.005} & 0.714\,{\scriptsize$\pm$0.032} & 0.584\,{\scriptsize$\pm$0.023} & 0.269\,{\scriptsize$\pm$0.035} & 0.417\,{\scriptsize$\pm$0.073} \\
- & M3-1w & 0.754\,{\scriptsize$\pm$0.022} & 0.569\,{\scriptsize$\pm$0.049} & 0.502\,{\scriptsize$\pm$0.024} & 0.147\,{\scriptsize$\pm$0.069} & 0.370\,{\scriptsize$\pm$0.057} \\
- & M3-sym & 0.754\,{\scriptsize$\pm$0.022} & 0.569\,{\scriptsize$\pm$0.049} & 0.502\,{\scriptsize$\pm$0.024} & 0.147\,{\scriptsize$\pm$0.069} & 0.370\,{\scriptsize$\pm$0.057} \\
- & M4 & 0.821\,{\scriptsize$\pm$0.020} & 0.557\,{\scriptsize$\pm$0.033} & 0.486\,{\scriptsize$\pm$0.070} & 0.211\,{\scriptsize$\pm$0.073} & 0.297\,{\scriptsize$\pm$0.053} \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{Per-label F1, precision (P) and recall (R) on gold-polarized texts (mean $\pm$ sd over seeds). M3-1w and M3-sym coincide because their \TYPE{} predictions are identical.}
-\label{tab:perlabel-full}
-\end{table}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_per_label_f1.pdf}
-\caption{Per-label \TYPE{} F1 on gold-polarized texts (mean $\pm$ sd over seeds). Gender/sexual and \textit{Other} are hard for every model (F1 $\leq$ 0.29) and show the largest seed variance; their thresholds are tuned on only about 6 and 10 inner-validation positives. M4-core has the smallest variance on the rare labels.}
-\label{fig:perlabel-f1}
-\end{figure}
-
-\begin{table}[H]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}llccc@{}}
-\toprule
-Comparison & Label & $\Delta$ precision & $\Delta$ recall & $\Delta$ F1 \\
-\midrule
-M4$-$M3-sym & Political & $-$0.001 & \textbf{+0.067} & \textbf{+0.040} \\
-M4$-$M3-sym & Racial/ethnic & \textbf{$-$0.042} & $-$0.011 & \textbf{$-$0.026} \\
-M4$-$M3-sym & Religious & +0.001 & $-$0.016 & $-$0.006 \\
-M4$-$M3-sym & Gender/sexual & +0.006 & \textbf{+0.064} & +0.039 \\
-M4$-$M3-sym & Other & +0.013 & \textbf{$-$0.073} & $-$0.009 \\
-\midrule
-M4$-$M2 & Political & $-$0.001 & \textbf{$-$0.171} & \textbf{$-$0.093} \\
-M4$-$M2 & Racial/ethnic & $-$0.004 & \textbf{$-$0.157} & \textbf{$-$0.062} \\
-M4$-$M2 & Religious & +0.016 & \textbf{$-$0.098} & $-$0.027 \\
-M4$-$M2 & Gender/sexual & +0.072 & $-$0.058 & +0.014 \\
-M4$-$M2 & Other & +0.022 & \textbf{$-$0.121} & $-$0.010 \\
-\midrule
-M4$-$M1 & Political & $-$0.001 & \textbf{$-$0.171} & \textbf{$-$0.093} \\
-M4$-$M1 & Racial/ethnic & \textbf{$-$0.075} & \textbf{$-$0.138} & \textbf{$-$0.102} \\
-M4$-$M1 & Religious & \textbf{$-$0.083} & \textbf{$-$0.112} & \textbf{$-$0.098} \\
-M4$-$M1 & Gender/sexual & $-$0.024 & \textbf{$-$0.078} & \textbf{$-$0.052} \\
-M4$-$M1 & Other & \textbf{$-$0.036} & \textbf{$-$0.127} & \textbf{$-$0.065} \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{Per-label paired differences of M4-core against each model (gold-polarized texts). Bold: 95\% bootstrap CI excludes zero. Against M1 and M2, M4-core loses recall on every label but keeps precision; against M3, the effects are mixed.}
-\label{tab:perlabel-diffs}
-\end{table}
-
-\section{Secondary Comparisons}
-\label{app:secondary}
-
-\begin{table}[H]
-\centering\small
-\begin{adjustbox}{max width=\linewidth}%
-\begin{tabular}{@{}llcccccc@{}}
-\toprule
-RQ & Comparison \& metric & A & B & $\Delta$ (A$-$B) & 95\% CI & $p$ & Seeds \\
-\midrule
-RQ1 & M4$-$M1: TYPE macro-P & 0.465 & 0.509 & $-$0.044 & [$-$0.064, $-$0.026] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M1: TYPE macro-R & 0.474 & 0.600 & $-$0.125 & [$-$0.151, $-$0.101] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M2: TYPE macro-P & 0.465 & 0.444 & +0.021 & [+0.001, +0.039] & 0.037 & 4/5 \\
-RQ1 & M4$-$M2: TYPE macro-R & 0.474 & 0.595 & $-$0.121 & [$-$0.148, $-$0.098] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M1: DET precision & 0.674 & 0.733 & $-$0.059 & [$-$0.069, $-$0.048] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M1: DET recall & 0.831 & 0.761 & +0.069 & [+0.057, +0.082] & $<$0.001 & 5/5 \\
-RQ1 & M4$-$M2: DET precision & 0.674 & 0.722 & $-$0.048 & [$-$0.057, $-$0.038] & $<$0.001 & 0/5 \\
-RQ1 & M4$-$M2: DET recall & 0.831 & 0.761 & +0.070 & [+0.059, +0.081] & $<$0.001 & 5/5 \\
-RQ1 & M4$-$M1: TYPE macro-F1 (all texts) & 0.396 & 0.299 & +0.097 & [+0.078, +0.114] & $<$0.001 & 5/5 \\
-RQ1 & M4$-$M2: TYPE macro-F1 (all texts) & 0.396 & 0.255 & +0.141 & [+0.121, +0.158] & $<$0.001 & 5/5 \\
-RQ1 & M2$-$M1: DET macro-F1 & 0.793 & 0.799 & $-$0.006 & [$-$0.011, $-$0.000] & 0.039 & 1/5 \\
-RQ1 & M2$-$M1: TYPE macro-F1 & 0.497 & 0.543 & $-$0.046 & [$-$0.060, $-$0.033] & $<$0.001 & 0/5 \\
-\midrule
-RQ2 & M4$-$M3-sym: TYPE macro-P & 0.465 & 0.469 & $-$0.004 & [$-$0.022, +0.012] & 0.553 & 2/5 \\
-RQ2 & M4$-$M3-sym: DET macro-F1 & 0.784 & 0.793 & $-$0.008 & [$-$0.016, $-$0.001] & 0.026 & 0/5 \\
-RQ2 & M4$-$M3-sym: Label recall (multi-label texts) & 0.610 & 0.585 & +0.025 & [+0.009, +0.041] & 0.001 & 4/5 \\
-RQ2 & M4$-$M3-sym: TYPE macro-F1 (all texts) & 0.396 & 0.382 & +0.014 & [$-$0.001, +0.026] & 0.073 & 4/5 \\
-RQ2 & M3-sym$-$M2: TYPE macro-F1 & 0.453 & 0.497 & $-$0.043 & [$-$0.056, $-$0.032] & $<$0.001 & 0/5 \\
-RQ2 & M3-sym$-$M2: TYPE macro-R & 0.468 & 0.595 & $-$0.127 & [$-$0.145, $-$0.110] & $<$0.001 & 0/5 \\
-RQ2 & M3-sym$-$M2: TYPE macro-P & 0.469 & 0.444 & +0.025 & [+0.013, +0.038] & $<$0.001 & 5/5 \\
-RQ2 & M3-sym$-$M2: DET macro-F1 & 0.793 & 0.793 & $-$0.000 & [$-$0.000, +0.000] & 0.242 & 0/5 \\
-RQ2 & M3-sym$-$M2: TYPE macro-F1 (all texts) & 0.382 & 0.255 & +0.127 & [+0.113, +0.142] & $<$0.001 & 5/5 \\
-RQ2 & M3-sym$-$M2: Label recall (multi-label texts) & 0.585 & 0.746 & $-$0.161 & [$-$0.184, $-$0.137] & $<$0.001 & 0/5 \\
-\bottomrule
-\end{tabular}%
-\end{adjustbox}
-\caption{Exploratory secondary comparisons (95\% paired bootstrap CIs; $p$ uncorrected). Rows include the effect of sharing (M2$-$M1) and the effect of gating (M3-sym$-$M2).}
-\label{tab:secondary-cmp}
-\end{table}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_secondary_metrics.pdf}
-\caption{\textbf{Secondary metrics.} Left: \TYPE{} macro-F1 on all texts, where the inconsistent models (M1, M2) fall below the consistent ones because their labels on non-polarized texts count as errors. Middle: \DET{} precision and recall, showing M4-core's shift toward recall. Right: label recall on multi-label texts, where gating (M3) loses most and M4-core recovers part of it.}
-\label{fig:secondary}
-\end{figure}
 
 \end{document}

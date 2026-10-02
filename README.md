@@ -1,205 +1,139 @@
-# POLAR Hierarchy Project
+# Structure over Scale: Hierarchy-Constrained Modeling for English Online Polarization Detection
 
-Research code for **Structure over Scale: Hierarchy-Constrained Modeling for English Online Polarization Detection**.
+Team **Ugh** — ANLP course project on [SemEval-2026 Task 9 (POLAR)](https://aclanthology.org/2026.semeval-1.453/), English, Subtasks 1–2.
 
-The repository implements the controlled mid-submission comparison:
+In POLAR, a text is polarized (**DET**, Subtask 1) exactly when at least one
+polarization type applies (**TYPE**, Subtask 2: Political, Racial/ethnic,
+Religious, Gender/sexual, Other). This project asks whether that hierarchy
+should be built into the model rather than repaired after prediction, and
+compares four ways of handling it under one controlled setup.
 
-- M1-DET and M1-TYPE: independent task-specific encoders;
-- M2: shared encoder with unconstrained DET and TYPE heads;
-- M3: deterministic post-processing of M2 predictions;
-- M4-core: TYPE heads with differentiable noisy-OR detection.
+## Links
 
-The experimental protocol is described in [docs/experiments.md](docs/experiments.md) and in the report.
-The mid-submission results are summarised in
-[docs/mid_submission_results.md](docs/mid_submission_results.md). The submitted
-ACL-format report is [report/report.pdf](report/report.pdf); its source is
-`report/acl_latex.tex` with `report/custom.bib` and `report/figures/`. To rebuild
-it, add `acl.sty` and `acl_natbib.bst` from the official
-[ACL style files](https://github.com/acl-org/acl-style-files) (or start from the
-ACL Overleaf template) and compile `acl_latex.tex` with pdfLaTeX.
+| Resource | Link |
+|---|---|
+| Mid-submission report (ACL format) | [report/report.pdf](report/report.pdf) |
+| Weights & Biases — all 100 training runs (public) | <https://wandb.ai/rakshitagg06-iiit-hyderabad/anlp-project> |
+| Code | <https://github.com/Rakshitagg06/ANLP_Ugh> |
+| Hugging Face models | Not yet released. The mid-submission sweep is evaluated by cross-validation and keeps no checkpoints; the final selected model will be trained with checkpoints and released on Hugging Face for the final submission. |
 
-## Repository structure
+The W&B project holds each run's configuration, loss and metric curves, and
+its out-of-fold predictions and metrics as artifacts.
 
-```text
-configs/                 experiment configurations
-data/raw/                original data; ignored by Git
-data/processed/          canonical data and fixed folds; ignored by Git
-docs/                    data, experiment, Ada, and W&B documentation
-scripts/                 training, fold generation, reconciliation, analysis
-slurm/                   Ada/SLURM templates
-src/polar_hierarchy/     reusable Python package
-tests/                   unit tests for hierarchy and metrics
-outputs/                 generated runs, predictions, metrics, logs, and plots
-```
+## Models
 
-## Installation
+All models use `microsoft/deberta-v3-base` (184M parameters) with mean pooling
+and linear heads.
 
-Use Python 3.10 or 3.11 on the final machine.
+| Model | Description | Consistent by design? |
+|---|---|:---:|
+| **M1** | Two independent encoders: one for DET, one for TYPE | no |
+| **M2** | One shared encoder with separate DET and TYPE heads | no |
+| **M3** | M2 predictions repaired after decoding: types removed when DET = 0 (one-way); DET then set to OR(types) (symmetric) | yes |
+| **M4-core** | One encoder with TYPE heads only; DET = noisy-OR of the type probabilities, `p_det = 1 − Π(1 − p_k)` | yes |
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[dev,wandb,parquet]'
-```
+## Main results
 
-Installing PyTorch may require an Ada-specific CUDA wheel or module. Follow the cluster's recommended PyTorch installation rather than blindly using the local command above.
+Out-of-fold over the 3,222 English training texts; mean ± sd over 5 seeds.
+TYPE scores use gold-polarized texts, as fixed before the experiments.
 
-## Data preparation
+| Model | DET macro-F1 | TYPE macro-F1 | TYPE macro-R | TYPE macro-F1 (all texts) | Hierarchy violations |
+|---|---:|---:|---:|---:|---:|
+| M1 | **0.799** ± 0.007 | **0.543** ± 0.013 | **0.600** ± 0.023 | 0.299 ± 0.013 | 61.9% |
+| M2 | 0.793 ± 0.003 | 0.497 ± 0.015 | 0.595 ± 0.019 | 0.255 ± 0.029 | 61.6% |
+| M3 (symmetric) | 0.793 ± 0.003 | 0.453 ± 0.022 | 0.468 ± 0.036 | 0.382 ± 0.017 | 0.0% |
+| M4-core | 0.784 ± 0.004 | 0.461 ± 0.007 | 0.474 ± 0.022 | **0.396** ± 0.008 | 0.0% |
 
-The supplied English files are stored under `data/raw/` and inventoried in [data/README.md](data/README.md). Dataset contents are intentionally ignored by Git. The training code uses the canonical columns documented in [docs/data_schema.md](docs/data_schema.md).
+- **RQ1** — does noisy-OR (M4-core) beat M1 and M2? **Not supported.** M4-core
+  detects more polarized texts but raises more false alarms, and its consistency
+  caps TYPE recall on the pre-declared metric.
+- **RQ2** — at equal consistency, does training-time structure keep more TYPE
+  recall than post-hoc gating (M3)? **Inconclusive** (TYPE F1 +0.008, 95% CI
+  [−0.009, +0.022]). Gating removes 23% of M2's correct type labels; M4-core
+  detects more texts but weakens rare labels.
 
-After mapping the official data into the configured columns, generate fixed outer folds:
+Full analyses: [docs/C1_RQ1.md](docs/C1_RQ1.md) and [docs/C2_RQ2.md](docs/C2_RQ2.md).
 
-```bash
-python scripts/create_folds.py \
-  --config configs/create_folds.yaml \
-  --output data/processed/english_train_folds.csv \
-  --seed 2026
-```
-
-Inspect the printed fold-level label counts before training.
-
-Then save a complete data audit and label-distribution graph:
-
-```bash
-python scripts/validate_data.py \
-  --config configs/m2.yaml \
-  --output-dir outputs/data_audit
-```
-
-## One sanity run
-
-```bash
-python scripts/train.py --config configs/m2.yaml --fold 0 --seed 42
-```
-
-For a quick smoke test, override epochs and the output directory:
-
-```bash
-python scripts/train.py \
-  --config configs/m2.yaml \
-  --fold 0 \
-  --seed 42 \
-  --set training.epochs=1 \
-  --set experiment.output_dir=outputs/smoke
-```
-
-Each run creates:
+## Repository layout
 
 ```text
-outputs/runs/<model>-fold<fold>-seed<seed>/
-  checkpoints/                 empty unless retention is explicitly enabled
-  logs/run.log
-  logs/events.jsonl
-  metrics/outer_fold_metrics.json
-  plots/loss_curves.png
-  plots/metric_curves.png
-  plots/per_label_f1.png
-  plots/*_probability_*.png
-  predictions/outer_fold_predictions.jsonl
-  environment.json
-  resolved_config.json
+configs/               training configs (m1_det, m1_type, m2, m4_core) and fold config
+src/polar_hierarchy/   data, models, losses (noisy-OR), trainer, metrics, M3 reconciliation
+scripts/               folds, training, sweep runner, post-processing, analysis, report assets
+tests/                 unit tests (noisy-OR, LVR, reconciliation, thresholds, checkpoints)
+slurm/                 SLURM templates and the fixed run plans (slurm/run_plans/*.tsv)
+outputs/analysis/      result tables (CSV/JSON/Markdown) generated from the saved predictions
+report/                report.pdf, its LaTeX source (acl_latex.tex), custom.bib, figures/
+docs/                  RQ1/RQ2 analyses, results summary, protocol, data schema
 ```
 
-For the 100-run Ada sweep, the best epoch is held in CPU memory only long
-enough to perform the outer-fold evaluation. This avoids filling the shared
-home-directory quota. To retain a deliberately selected run, add
-`--set training.keep_checkpoint=true`; retained checkpoints are written under
-`checkpoints/best/`.
+## Setup
 
-## Creating M3
-
-M3 has no training loop. Generate it from a completed M2 prediction file:
+Python 3.10+ and a CUDA GPU (runs used an 8 GB RTX 4060).
 
 ```bash
-python scripts/reconcile_m3.py \
-  --m2-predictions outputs/runs/m2-fold0-seed42/predictions/outer_fold_predictions.jsonl \
-  --output-dir outputs/runs/m2-fold0-seed42/m3
+python -m venv .venv && source .venv/bin/activate
+pip install -e '.[dev,wandb]'
 ```
 
-This saves both `m3_one_way` and `m3_symmetric` predictions plus the gating audit.
+The configs pin the encoder to a safetensors revision of
+`microsoft/deberta-v3-base` that is tensor-identical to `main`.
 
-## Combining M1
-
-M1 uses separate DET and TYPE models. Combine matching predictions before computing joint metrics:
-
-```bash
-python scripts/combine_m1.py \
-  --det-predictions outputs/runs/m1_det-fold0-seed42/predictions/outer_fold_predictions.jsonl \
-  --type-predictions outputs/runs/m1_type-fold0-seed42/predictions/outer_fold_predictions.jsonl \
-  --output outputs/runs/m1-fold0-seed42/predictions/outer_fold_predictions.jsonl \
-  --metrics-output outputs/runs/m1-fold0-seed42/metrics/outer_fold_metrics.json
-```
-
-On Ada, matching M1 components are combined from the immutable 25-row plan via
-`bash slurm/submit_m1_wave.sh START COUNT`.
-
-## W&B
-
-W&B is disabled by default. The committed configurations target entity `manavberiwal006-iiit-hyderabad` and project `anlp-project`. Enable logging only after authenticating securely:
-
-```bash
-python scripts/train.py \
-  --config configs/m4_core.yaml \
-  --fold 0 \
-  --seed 42 \
-  --set logging.wandb.enabled=true
-```
-
-If compute nodes have no outbound network:
-
-```bash
-export WANDB_MODE=offline
-```
-
-Never store `WANDB_API_KEY` in tracked files, YAML, SLURM scripts, shell history, or the shared account's profile. Ada training jobs require the key to be exported in the submitting shell and never fall back to the shared account's W&B CLI login. They also force the W&B destination to `manavberiwal006-iiit-hyderabad/anlp-project`. See [docs/ada_and_wandb.md](docs/ada_and_wandb.md).
-
-## Ada/SLURM
-
-The templates use the supplied Ada scheduling policy:
+**Data.** The POLAR data are not distributed with this repository. Place the
+official English files at:
 
 ```text
--p u22 -A research --qos=medium --constraint=2080ti --exclude=gnode066
+data/train/eng.csv
+data/dev/eng.csv
+data/test/eng.csv
 ```
 
-Ada permits at most eight submitted jobs and four running jobs per user. Generate the immutable run plans first:
+## Reproducing the results
 
 ```bash
-python scripts/generate_run_plan.py
+# 1. Fixed 5-fold multilabel-stratified split (seed 2026)
+python scripts/create_folds.py --config configs/create_folds.yaml \
+  --output data/processed/english_train_folds.csv --seed 2026
+
+# 2. All 100 training runs (4 models x 5 folds x 5 seeds); resumable
+bash scripts/run_local_sweep.sh
+
+# 3. Join M1-DET + M1-TYPE into M1, and derive both M3 variants from M2
+bash scripts/postprocess_m1_m3.sh
+
+# 4. Metrics, paired bootstrap tests, gating audit -> outputs/analysis/
+python scripts/analyze_mid_submission.py
+python scripts/analyze_rq2_decomposition.py
+
+# 5. Report tables and figures (figures -> report/figures/)
+python scripts/make_report_assets.py
 ```
 
-The frozen Ada `spell` environment is never modified. Before the first model
-run, submit `sbatch slurm/setup_project_deps.sbatch`; this installs the missing
-SentencePiece tokenizer dependency into the Git-ignored project directory
-`.deps/` using `pip --target`.
-
-After one validated sanity run, submit at most one eight-task wave:
+`run_local_sweep.sh` logs to W&B and reads the API key from
+`.secrets/keys.sh` (git-ignored), which should contain
+`export WANDB_API_KEY=...`. To train a single run without W&B:
 
 ```bash
-bash slurm/submit_wave.sh 0 8
+python scripts/train.py --config configs/m4_core.yaml --fold 0 --seed 42 \
+  --set logging.wandb.enabled=false
 ```
 
-Wait for slots to clear before submitting the next wave (`8 8`, `16 8`, and so on). After all M2 runs finish, submit M3 in the same way with `slurm/submit_m3_wave.sh`. Review [docs/ada_and_wandb.md](docs/ada_and_wandb.md) before submission.
+Each run writes `outputs/runs/<model>-fold<k>-seed<s>/` with its predictions,
+metrics, plots, logs and resolved config. Model weights are not kept unless
+`--set training.keep_checkpoint=true` is passed.
 
-## Tests
+**Tests:** `pytest -q` (no model download needed).
 
-```bash
-pytest -q
-```
+## Protocol in brief
 
-The tests cover noisy-OR equivalence, both LVR directions, symmetric M3 consistency, and threshold behaviour. They do not download a transformer model.
+- One fixed five-fold split; seeds 13, 21, 42, 87, 100.
+- Early stopping, checkpoint selection and all thresholds use only an inner
+  10% validation split; each held-out fold is predicted once.
+- For each seed, the five held-out folds are scored as one 3,222-text set;
+  results are mean ± sd over seeds.
+- Comparisons use a paired bootstrap over texts (2,000 resamples) with Holm
+  correction over the six pre-declared RQ1/RQ2 tests.
+- All reported numbers are computed from saved predictions, not from W&B
+  summaries.
 
-## Reproducibility rules
-
-- Use the same fixed folds and seed list for every model.
-- Tune checkpoints and thresholds only on the inner validation split.
-- Never tune against the outer fold.
-- Preserve raw probabilities and predictions.
-- Derive M3 from the exact matching M2 run.
-- Generate paper metrics from saved out-of-fold predictions, not W&B summaries alone.
-- Record the exact encoder revision, source commit, Ada job ID, and resolved config.
-
-## Current status
-
-All 100 mid-submission training runs (M1-DET, M1-TYPE, M2, M4-core × 5 folds × 5 seeds) are complete, with M1 combination and both M3 variants derived for every fold/seed pair. The RQ1/RQ2 analysis, tables, and figures are in [docs/mid_submission_results.md](docs/mid_submission_results.md) and are regenerated with `python scripts/analyze_mid_submission.py`. The sweep ran locally via `bash scripts/run_local_sweep.sh` (resumable; logs every run and its predictions to W&B).
+Details: [docs/experiments.md](docs/experiments.md) and the report.
